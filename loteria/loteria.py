@@ -4,12 +4,16 @@
 #	a quantidade dos números a serem tirados
 #	os números que serão apostados (na forma: 1 2 3 4 ... 23 34 56, com os números separados por espaço)
 
+import random
+
 from loteria_exceptions import LoteriaException, ParameterSetException, AddTicketException
 
 MIN_VALUE = 0
 MAX_VALUE = 100
 QT_NUMBERS = 5
 TICKETS = []
+SORTED_NUMBERS = []
+WINNER_TICKETS = []
 
 def set_min_value (new_value) :
 	global MIN_VALUE
@@ -50,6 +54,10 @@ def add_ticket(numbers_input) :
 		raise AddTicketException("A aposta deve conter somente valores")
 
 	parsed_numbers = set(parsed_numbers)
+
+	if (len(parsed_numbers) != QT_NUMBERS) :
+		raise AddTicketException("Quantidade de números únicos inválida")
+	
 	available_numbers_set = set(range(MIN_VALUE, MAX_VALUE + 1))
 
 	if (not parsed_numbers.issubset(available_numbers_set)) :
@@ -58,3 +66,29 @@ def add_ticket(numbers_input) :
 	TICKETS.append(parsed_numbers)
 
 	return f"Aposta adicionada com sucesso"
+
+# funções temporárias
+
+def temp_numbers_sort() :
+	global SORTED_NUMBERS, WINNER_TICKETS
+
+	SORTED_NUMBERS = []
+	WINNER_TICKETS = {i: [] for i in range(1, QT_NUMBERS + 1)}
+
+	random.seed()
+
+	# sampled = random.sample(range(MIN_VALUE, MAX_VALUE + 1), QT_NUMBERS)
+	# for num in sampled :
+	#	SORTED_NUMBERS.append(num)
+
+	for i in range(MIN_VALUE, MIN_VALUE + QT_NUMBERS) :
+		SORTED_NUMBERS.append(i)
+
+	SORTED_NUMBERS = set(SORTED_NUMBERS)
+
+	for ticket in TICKETS :
+		qt_matches = len(SORTED_NUMBERS & ticket)
+		if (qt_matches != 0) : WINNER_TICKETS[qt_matches].append(ticket)
+		
+def fetch_tickets() :
+	return TICKETS.copy()

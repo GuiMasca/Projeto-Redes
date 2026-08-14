@@ -12,6 +12,8 @@ def reset_global_variables():
     loteria.MAX_VALUE = 100
     loteria.QT_NUMBERS = 5
     loteria.TICKETS = []
+    loteria.SORTED_NUMBERS = []
+    loteria.WINNER_TICKETS = {}
 
 # --- Testes para set_min_value ---
 
@@ -75,9 +77,44 @@ def test_add_ticket_non_numeric_values_exception():
 
 def test_add_ticket_numbers_out_of_range_exception():
     with pytest.raises(AddTicketException) as exc_info:
-        loteria.add_ticket("0 50 101")
+        loteria.add_ticket("0 50 101 2 3")
     assert "Números não cobridos pela aposta foram inseridos" in str(exc_info.value)
 
-def test_add_ticket_handles_duplicate_numbers_correctly():
-    loteria.add_ticket("5 5 10 10 20")
-    assert loteria.TICKETS[0] == {5, 10, 20}
+def test_add_ticket_duplicate_numbers_exception():
+    with pytest.raises(AddTicketException) as exc_info:
+        loteria.add_ticket("5 5 10 10 20")
+    assert "Quantidade de números únicos inválida" in str(exc_info.value)
+
+# --- Testes para fetch_tickets ---
+
+def test_fetch_tickets_success():
+    loteria.add_ticket("0 1 2 3 4")
+    tickets = loteria.fetch_tickets()
+    assert len(tickets) == 1
+    assert tickets[0] == {0, 1, 2, 3, 4}
+
+def test_fetch_tickets_returns_copy():
+    loteria.add_ticket("0 1 2 3 4")
+    tickets = loteria.fetch_tickets()
+    tickets.clear()
+    assert len(loteria.TICKETS) == 1
+
+# --- Testes para temp_numbers_sort ---
+
+def test_temp_numbers_sort_with_matches():
+    loteria.add_ticket("0 1 2 3 4")  # 5 acertos
+    loteria.add_ticket("0 1 2 8 9")  # 3 acertos
+    
+    loteria.temp_numbers_sort()
+
+    assert loteria.SORTED_NUMBERS == {0, 1, 2, 3, 4}
+    assert {0, 1, 2, 3, 4} in loteria.WINNER_TICKETS[5]
+    assert {0, 1, 2, 8, 9} in loteria.WINNER_TICKETS[3]
+
+def test_temp_numbers_sort_no_matches():
+    loteria.add_ticket("50 51 52 53 54")  # Nenhum acerto
+    
+    loteria.temp_numbers_sort()
+
+    for qt_acertos in range(1, loteria.QT_NUMBERS + 1):
+        assert loteria.WINNER_TICKETS[qt_acertos] == []
