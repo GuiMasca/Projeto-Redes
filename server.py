@@ -2,8 +2,6 @@ import socket
 from datetime import datetime
 
 
-datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
 HOST = ''
 PORT = 50007
 
@@ -19,7 +17,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         print("Conexão estabelecida com:", addr)
         print("/n/n")
 
-        horario = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        horario = datetime.now().strftime("%d-%m-%y %H:%M:%S")
 
         msg1 = f"{horario} - CONECTADO!! /n/n"
 
