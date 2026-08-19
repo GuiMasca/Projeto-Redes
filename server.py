@@ -61,15 +61,16 @@ def processar_mensagem(texto):
 
 
 def montar_mensagem_resultado(sorteados, vencedores):
-    """Monta a string de resultado: números sorteados e apostas vencedoras por quantidade de acertos."""
+    """Monta a string de resultado: números sorteados e, por aposta vencedora, quais números acertou."""
     linha_sorteio = f"Números sorteados: {sorted(sorteados)}"
 
     linha_vencedores = []
     for qtd_acertos, tickets in vencedores.items():
         if tickets:
             for ticket in tickets:
-                # cada aposta é um set de ints; sorted() ordena e vira lista legível
-                linha_vencedores.append(f"{qtd_acertos} acertos: {sorted(ticket)}")
+                # cada aposta é um set de ints; mostra a interseção com o sorteio
+                acertados = sorted(sorteados & ticket)
+                linha_vencedores.append(f"Aposta {sorted(ticket)} acertou {qtd_acertos} número(s): {acertados}")
 
     if not linha_vencedores:
         linha_vencedores.append("Nenhum vencedor nesta rodada.")
