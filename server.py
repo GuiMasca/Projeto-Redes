@@ -5,19 +5,35 @@ import os
 import time
 from datetime import datetime
 
+# o módulo loteria fica na pasta irmã "loteria/"; ajusta o sys.path para o
+# interpretador encontrar "loteria.py" e "loteria_exceptions.py"
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'loteria'))
+
 import loteria
 from loteria_exceptions import LoteriaException
 
-# protege chamadas as funções de loteria, pois elas usam variáveis globais
+# protege chamadas às funções de loteria, pois elas usam variáveis globais
 lock = threading.Lock()
+# protege o envio pelo socket, pois as duas threads podem enviar ao mesmo tempo
 lock_envio = threading.Lock()
+# flag global que coordena o encerramento das duas threads
 rodando = True
 
 HOST = ''
 PORT = 50007
+# intervalo (em segundos) entre os sorteios; extraído para constante para
+# acelerar os testes de integração (é só reduzir o valor durante os testes)
+TEMPO_SORTEIO = 60
 
 
-def processar_mensagem(texto): #tradutor
+def processar_mensagem(texto):
+    """Interpreta o texto cru do cliente e chama a função correspondente do módulo loteria.
+
+    - Começa com ":" -> comando de configuração (:inicio, :fim, :qtd).
+    - Caso contrário -> aposta (números separados por espaço).
+
+    Retorna a string de resposta. Isolada do socket para poder ser testada sem rede.
+    """
     texto = texto.strip()
 
     with lock:
@@ -43,36 +59,46 @@ def processar_mensagem(texto): #tradutor
         except (ValueError, IndexError):
             return "ERRO: Comando mal formatado"
 
-def montar_mensagem_resultado(sorteados, vencedores):
 
-    linha_sorteio = f"Numeros serteados: {sorted(sorteados)}"
+def montar_mensagem_resultado(sorteados, vencedores):
+    """Monta a string de resultado: números sorteados e apostas vencedoras por quantidade de acertos."""
+    linha_sorteio = f"Números sorteados: {sorted(sorteados)}"
 
     linha_vencedores = []
     for qtd_acertos, tickets in vencedores.items():
         if tickets:
-            linha_vencedores.append(f"{qtd_acertos} acertos: {', '.join(tickets)}")
+            for ticket in tickets:
+                # cada aposta é um set de ints; sorted() ordena e vira lista legível
+                linha_vencedores.append(f"{qtd_acertos} acertos: {sorted(ticket)}")
 
-        if not linha_vencedores:
-            linha_vencedores.append("Nenhum vencedor nesta rodada.")
+    if not linha_vencedores:
+        linha_vencedores.append("Nenhum vencedor nesta rodada.")
 
-        return linha_sorteio + "\n" + "\n".join(linha_vencedores) + "\n"
+    return linha_sorteio + "\n" + "\n".join(linha_vencedores) + "\n"
+
 
 def thread_1_receber_dados(conn):
-
+    """Loop de leitura do socket: interpreta cada mensagem recebida e responde via sendall."""
     global rodando
 
     while rodando:
         try:
             dados = conn.recv(1024)
-
         except OSError:
+            # erro de rede: cliente desconectou ou socket foi fechado
             break
 
         if not dados:
+            # recv() retornou vazio -> cliente fechou a conexão
             break
 
         texto = dados.decode()
-        resposta = processar_mensagem(texto)
+
+        try:
+            resposta = processar_mensagem(texto)
+        except Exception as e:
+            print(f"[Thread 1] Erro ao processar mensagem: {e}")
+            resposta = "ERRO: Ocorreu um problema interno do servidor."
 
         with lock_envio:
             try:
@@ -84,12 +110,14 @@ def thread_1_receber_dados(conn):
 
     print("thread 1 encerrada")
 
-def thread_2_sorteio(conn):
 
+def thread_2_sorteio(conn):
+    """A cada TEMPO_SORTEIO segundos: sorteia, monta o resultado, envia ao cliente e zera as apostas."""
     global rodando
 
     while rodando:
-        for _ in range(60):
+        # dorme em passos de 1s para reagir rápido se a conexão cair no meio da espera
+        for _ in range(TEMPO_SORTEIO):
             if not rodando:
                 break
             time.sleep(1)
@@ -97,12 +125,19 @@ def thread_2_sorteio(conn):
         if not rodando:
             break
 
-        with lock:
-            loteria.temp_numbers_sort()
-            sorteados = loteria.SORTED_NUMBERS
-            vencedores = loteria.WINNER_TICKETS
+        try:
+            with lock:
+                loteria.temp_numbers_sort()
+                sorteados = loteria.SORTED_NUMBERS
+                vencedores = loteria.WINNER_TICKETS
+                # zera a lista de apostas para o próximo ciclo
+                loteria.TICKETS.clear()
 
-        mensagem = montar_mensagem_resultado(sorteados, vencedores)
+            mensagem = montar_mensagem_resultado(sorteados, vencedores)
+
+        except Exception as e:
+            print(f"[Thread 2] Erro ao realizar sorteio: {e}")
+            continue
 
         with lock_envio:
             try:
@@ -110,6 +145,9 @@ def thread_2_sorteio(conn):
             except OSError:
                 rodando = False
                 break
+
+    print("thread 2 finalizada")
+
 
 if __name__ == "__main__":
 
@@ -137,6 +175,7 @@ if __name__ == "__main__":
             t1.start()
             t2.start()
 
+            # aguarda as duas threads encerrarem antes de fechar a conexão
             t1.join()
             t2.join()
 
