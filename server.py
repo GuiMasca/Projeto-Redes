@@ -147,7 +147,7 @@ def thread_2_sorteio(conn):
                 rodando = False
                 break
 
-    print("thread 2 finalizada")
+    print("thread 2 encerrada")
 
 
 if __name__ == "__main__":
