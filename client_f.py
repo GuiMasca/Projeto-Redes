@@ -13,7 +13,7 @@ def receive_messages(sock):
             print('Recebido:', data.decode())
 
         except Exception as e:
-            print('Erro ao receber dados:', e)
+            print('Erro ao receber dados', e)
             break
 
 

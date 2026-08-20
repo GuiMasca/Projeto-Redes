@@ -23,7 +23,6 @@ while True:
         break
 
     mensagem = data.decode()
-
     print("Cliente:", mensagem)
 
     if mensagem.lower() == "exit":
