@@ -1,0 +1,37 @@
+# Python: bytecode e cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ambiente virtual
+.venv/
+venv/
+env/
+ENV/
+
+# Testes e cobertura
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Ferramentas e análise
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.tox/
+
+# IDEs e editores
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Arquivos locais de configuração/segredos
+.env
+.env.*
