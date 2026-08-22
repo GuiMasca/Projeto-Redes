@@ -64,13 +64,17 @@ def montar_mensagem_resultado(sorteados, vencedores):
     """Monta a string de resultado: números sorteados e, por aposta vencedora, quais números acertou."""
     linha_sorteio = f"Números sorteados: {sorted(sorteados)}"
 
+    sorteados_set = set(sorteados)
+
     linha_vencedores = []
-    for qtd_acertos, tickets in vencedores.items():
-        if tickets:
-            for ticket in tickets:
-                # cada aposta é um set de ints; mostra a interseção com o sorteio
-                acertados = sorted(sorteados & ticket)
-                linha_vencedores.append(f"Aposta {sorted(ticket)} acertou {qtd_acertos} número(s): {acertados}")
+    # WINNER_TICKETS é uma lista onde o índice é a quantidade de acertos
+    for qtd_acertos, tickets in enumerate(vencedores):
+        if qtd_acertos == 0 or not tickets:
+            continue
+        for ticket in tickets:
+            # cada aposta é um set de ints; mostra a interseção com o sorteio
+            acertados = sorted(sorteados_set & ticket)
+            linha_vencedores.append(f"Aposta {sorted(ticket)} acertou {qtd_acertos} número(s): {acertados}")
 
     if not linha_vencedores:
         linha_vencedores.append("Nenhum vencedor nesta rodada.")
@@ -78,7 +82,7 @@ def montar_mensagem_resultado(sorteados, vencedores):
     return linha_sorteio + "\n" + "\n".join(linha_vencedores) + "\n"
 
 
-def thread_1_receber_dados(conn):
+def thread_1_receber_dados(conn, addr):
     """Loop de leitura do socket: interpreta cada mensagem recebida e responde via sendall."""
     global rodando
 
@@ -95,17 +99,26 @@ def thread_1_receber_dados(conn):
 
         texto = dados.decode()
 
-        try:
-            resposta = processar_mensagem(texto)
-        except Exception as e:
-            print(f"[Thread 1] Erro ao processar mensagem: {e}")
-            resposta = "ERRO: Ocorreu um problema interno do servidor."
+        # o TCP pode agrupar várias mensagens numa única chegada de dados;
+        # separa por linha para interpretar cada comando/aposta individualmente
+        for linha in texto.splitlines():
+            if not linha.strip():
+                continue
 
-        with lock_envio:
+            print(f"Recebido de {addr}: {linha}")
+
             try:
-                conn.sendall(resposta.encode())
-            except OSError:
-                break
+                resposta = processar_mensagem(linha)
+            except Exception as e:
+                print(f"[Thread 1] Erro ao processar mensagem: {e}")
+                resposta = "ERRO: Ocorreu um problema interno do servidor."
+
+            with lock_envio:
+                try:
+                    conn.sendall(resposta.encode())
+                except OSError:
+                    rodando = False
+                    break
 
     rodando = False
 
@@ -155,29 +168,39 @@ if __name__ == "__main__":
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((HOST, PORT))
-        s.listen(1)
+        s.listen(5)
 
-        print("Servidor aguardando conexão...")
+        # aceita clientes em sequência: quando um usuário desconecta,
+        # o servidor volta a aguardar a próxima conexão
+        while True:
+            print("Servidor aguardando conexão...")
 
-        conn, addr = s.accept()
+            conn, addr = s.accept()
 
-        with conn:
-            print('Conectado por', addr)
+            with conn:
+                print('Conectado por', addr)
 
-            horario = datetime.now().strftime("%H:%M:%S")
-            msg1 = f"{horario}: CONECTADO!!"
-            conn.sendall(msg1.encode())
+                horario = datetime.now().strftime("%H:%M:%S")
+                msg1 = f"{horario}: CONECTADO!!"
+                conn.sendall(msg1.encode())
 
-            print("MSG1 enviada:", msg1)
+                print("MSG1 enviada:", msg1)
 
-            t1 = threading.Thread(target=thread_1_receber_dados, args=(conn,))
-            t2 = threading.Thread(target=thread_2_sorteio, args=(conn,))
+                # novo usuário começa sem as apostas da sessão anterior
+                with lock:
+                    loteria.reset_tickets()
 
-            t1.start()
-            t2.start()
+                # reinicia a flag que coordena o encerramento das threads
+                rodando = True
 
-            # aguarda as duas threads encerrarem antes de fechar a conexão
-            t1.join()
-            t2.join()
+                t1 = threading.Thread(target=thread_1_receber_dados, args=(conn, addr))
+                t2 = threading.Thread(target=thread_2_sorteio, args=(conn,))
 
-    print("Servidor encerrado.")
+                t1.start()
+                t2.start()
+
+                # aguarda as duas threads encerrarem antes do próximo accept
+                t1.join()
+                t2.join()
+
+            print("Cliente desconectado.")

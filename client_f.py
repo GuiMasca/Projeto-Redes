@@ -30,7 +30,7 @@ def send_messages(sock):
 def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    sock.connect(('localhost', 12345))
+    sock.connect(('localhost', 50007))
 
     print("Conectado ao servidor. Digite 'exit' para sair.")
 
