@@ -2,7 +2,12 @@ import socket
 import threading
 
 
-def receive_messages(sock, stop_event):
+def show_bet_prompt():
+    print('Faça sua aposta:')
+    print('> ', end='', flush=True)
+
+
+def receive_messages(sock, stop_event, bet_allowed):
     while not stop_event.is_set():
         try:
             data = sock.recv(1024)
@@ -12,7 +17,19 @@ def receive_messages(sock, stop_event):
                     print("Conexão encerrada pelo servidor.")
                 break
 
-            print('Recebido:', data.decode())
+            message = data.decode()
+            print('\nRecebido:', message)
+
+            if 'foi adicionada com sucesso' in message:
+                print('Aposta confirmada! Aguarde os resultados do sorteio.')
+            elif 'Números sorteados:' in message:
+                print('Rodada encerrada. Uma nova aposta pode ser feita.')
+                bet_allowed.set()
+                show_bet_prompt()
+            elif 'ERRO:' in message:
+                # A aposta não foi aceita; libera uma nova tentativa.
+                bet_allowed.set()
+                show_bet_prompt()
 
         except UnicodeDecodeError:
             print('Erro ao receber dados: mensagem inválida')
@@ -25,15 +42,23 @@ def receive_messages(sock, stop_event):
     stop_event.set()
 
 
-def send_messages(sock, stop_event):
+def send_messages(sock, stop_event, bet_allowed):
     while not stop_event.is_set():
+        bet_allowed.wait()
+        if stop_event.is_set():
+            break
+
         try:
-            message = input("> ")
+            message = input()
         except (EOFError, KeyboardInterrupt):
             message = 'exit'
 
         if message.lower() == 'exit':
             break
+
+        # Impede outra aposta até o servidor rejeitar a atual ou realizar o
+        # sorteio. Assim o cliente permanece no estado "aguarde".
+        bet_allowed.clear()
 
         try:
             # O servidor separa comandos e apostas por linhas.
@@ -52,6 +77,8 @@ def send_messages(sock, stop_event):
 
 def main():
     stop_event = threading.Event()
+    bet_allowed = threading.Event()
+    bet_allowed.set()
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         try:
@@ -60,18 +87,36 @@ def main():
             print('Não foi possível conectar ao servidor:', e)
             return
 
+        try:
+            initial_message = sock.recv(1024)
+            if not initial_message:
+                print('Conexão encerrada pelo servidor.')
+                return
+            print('Recebido:', initial_message.decode())
+        except UnicodeDecodeError:
+            print('Erro ao receber dados: mensagem inválida')
+            return
+        except OSError as e:
+            print('Erro ao receber dados:', e)
+            return
+
         print("Conectado ao servidor. Digite 'exit' para sair.")
+        print("\nCOMO JOGAR")
+        print("- Faça sua aposta digitando 5 números separados por espaços.")
+        print("  Exemplo: 1 2 3 4 5")
+        print("- Após a confirmação da aposta, aguarde o resultado do sorteio.\n")
+        show_bet_prompt()
 
         receive_thread = threading.Thread(
             target=receive_messages,
-            args=(sock, stop_event)
+            args=(sock, stop_event, bet_allowed)
         )
 
         receive_thread.start()
 
         send_thread = threading.Thread(
             target=send_messages,
-            args=(sock, stop_event),
+            args=(sock, stop_event, bet_allowed),
             daemon=True
         )
 
