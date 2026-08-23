@@ -113,6 +113,17 @@ def add_ticket(numbers_input) :
 def reset_tickets() :
 	TICKETS.clear()
 
+def reset_all() :
+	"""Restaura todos os parâmetros globais para os valores padrão."""
+	global MIN_VALUE, MAX_VALUE, QT_NUMBERS, WINNER_TICKETS
+
+	MIN_VALUE = 0
+	MAX_VALUE = 100
+	QT_NUMBERS = 5
+	TICKETS.clear()
+	SORTED_NUMBERS.clear()
+	WINNER_TICKETS = _build_empty_winner_tickets()
+
 def fetch_tickets() :
 	return TICKETS.copy()
 

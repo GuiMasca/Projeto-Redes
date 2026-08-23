@@ -137,6 +137,24 @@ def test_reset_tickets():
     loteria.reset_tickets()
     assert loteria.TICKETS == []
 
+# --- Testes para reset_all ---
+
+def test_reset_all_restores_defaults():
+    loteria.set_min_value(10)
+    loteria.set_max_value(200)
+    loteria.qtd_numeros_sorteador(8)
+    loteria.add_ticket("10 11 12 13 14 15 16 17")
+
+    loteria.reset_all()
+
+    assert loteria.MIN_VALUE == 0
+    assert loteria.MAX_VALUE == 100
+    assert loteria.QT_NUMBERS == 5
+    assert loteria.TICKETS == []
+    assert loteria.SORTED_NUMBERS == []
+    assert len(loteria.WINNER_TICKETS) == 6  # QT_NUMBERS(5) + índice 0
+    assert all(bucket == [] for bucket in loteria.WINNER_TICKETS)
+
 # --- Testes para fetch_tickets ---
 
 def test_fetch_tickets_success():
