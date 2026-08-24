@@ -9,20 +9,43 @@ import loteria
 from datetime import datetime
 from loteria_exceptions import LoteriaException, AddTicketException
 
+
+lock = threading.Lock()
+lock_envio = threading.Lock()
+
 def ciclo_sorteio(conn, encerrar):
     while True:
         for _ in range(60): #dorme por 60 segundos, em 60 sonos de 1 segundo
             if encerrar.is_set():
                 return
             time.sleep(1)   #sono de 1 segundo
-        conn.sendall(b'sorteio de teste\n')
 
+        with lock:
+            vencedores = loteria.temp_numbers_sort()    #sorteia e calcula
+            sorteados = loteria.SORTED_NUMBERS  #guarda cópia dos sorteados
+            loteria.TICKETS.clear() #zera as apostas para o proximo ciclo
+        mensagem = montar_mensagem_resultado(sorteados, vencedores)
 
-lock = threading.Lock()
-
+        with lock_envio:
+            conn.sendall(mensagem.encode())
 
 HOST = ''   #host aberto para aceitar conexões de qualquer endereço (mais flexivel)
 PORT = 50007
+
+def montar_mensagem_resultado(sorteados, vencedores):
+    linhas = [f'Numeros sorteados: {sorted(sorteados)}']
+
+    for qtd_acertos, apostas in enumerate(vencedores):
+        if qtd_acertos == 0 or not apostas:
+            continue
+        for aposta in apostas:
+            acertos = sorted(set(sorteados) & aposta)
+            linhas.append(f'Aposta {sorted(aposta)} acertou {qtd_acertos} numero(s): {acertos}')
+
+    if len(linhas) == 1:
+        linhas.append('nenhum vencedor nesta rodada')
+
+    return '\n'.join(linhas) + '\n'
 
 
 def atender_cliente(conn, addr, encerrar):
@@ -69,7 +92,8 @@ def atender_cliente(conn, addr, encerrar):
                             resposta = loteria.add_ticket(linha) + '\n'
                         except AddTicketException as e:
                             resposta = f'ERRO: {e}\n'
-                conn.sendall(resposta.encode()) #ponto de envio
+                with lock_envio:
+                    conn.sendall(resposta.encode()) #ponto de envio
                 print(f'recebido: {linha} | Apostas: {loteria.fetch_tickets()}')    #olha e printa loteria.TICKETS
 
 
