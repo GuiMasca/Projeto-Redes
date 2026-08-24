@@ -25,9 +25,13 @@ def ciclo_sorteio(conn, encerrar):
             sorteados = loteria.SORTED_NUMBERS  #guarda cópia dos sorteados
             loteria.TICKETS.clear() #zera as apostas para o proximo ciclo
         mensagem = montar_mensagem_resultado(sorteados, vencedores)
+        print(f'Sorteio realizado:\n{mensagem}', end='')   #registro completo no servidor: numeros sorteados e ganhadores
 
         with lock_envio:
-            conn.sendall(mensagem.encode())
+            try:
+                conn.sendall(mensagem.encode())
+            except OSError:          #cliente sumiu entre dois sorteios: relojoeiro vai embora sem traceback
+                return
 
 HOST = ''   #host aberto para aceitar conexões de qualquer endereço (mais flexivel)
 PORT = 50007
@@ -57,8 +61,11 @@ def atender_cliente(conn, addr, encerrar):
 
         buffer = "" #aguarda bytes chegando até formar linha completa
         while True: #enquanto o cliente existir
-            data = conn.recv(1024)
-            if not data: break
+            try:
+                data = conn.recv(1024)   #espera uma mensagem do cliente
+            except OSError:              #conexao caiu de forma abrupta (reset de rede): mesmo destino do fim normal
+                break
+            if not data: break           #recv vazio = cliente fechou do jeito limpo
             buffer += data.decode() #despeja o pedaço na caixa, somando o que ja havia
 
             while "\n" in buffer: #caso exista pelomenos uma linha completa...
@@ -109,14 +116,23 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     s.bind((HOST, PORT))
     s.listen(5)     #de padrão vem 1, mas eu quero que mais clientes possam se conectar ao mesmo tempo, então coloco 5.
 
-    while True:
-        conn, addr = s.accept()
-        encerrar = threading.Event()
-        t1 = threading.Thread(target=atender_cliente, args=(conn, addr, encerrar))  #cria uma thread ("funcionario") para cada cliente que se conecta
-        t2 = threading.Thread(target=ciclo_sorteio, args=(conn, encerrar))  #cria uma thread 
-        t1.start() #coloca a thread ("funcionario") para trabalhar
-        t2.start()  
+    try:
+        while True:
+            conn, addr = s.accept()
 
-        t1.join() #proximo accept() só depois que o cliente atual saír
-        t2.join()
-        
+            #sessao zerada para cada novo cliente: nada de configuracao
+            #ou apostas herdadas da conexao anterior
+            with lock:
+                loteria.reset_all()
+
+            encerrar = threading.Event()
+            t1 = threading.Thread(target=atender_cliente, args=(conn, addr, encerrar), daemon=True)  #cria uma thread ("funcionario") para cada cliente que se conecta; daemon=True: encerra junto com o servidor
+            t2 = threading.Thread(target=ciclo_sorteio, args=(conn, encerrar), daemon=True)  #cria a thread do relojoeiro; daemon idem
+            t1.start() #coloca as threads ("funcionarios") para trabalhar
+            t2.start()
+
+            t1.join() #proximo accept() só depois que o cliente atual saír
+            t2.join()
+
+    except KeyboardInterrupt:  #Ctrl+C do usuario: sai do laco e encerra sem traceback
+        print('\nServidor encerrado pelo usuario.')
