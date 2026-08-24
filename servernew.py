@@ -8,6 +8,8 @@ import loteria
 from datetime import datetime
 from loteria_exceptions import LoteriaException, AddTicketException
 
+lock = threading.Lock()
+
 
 HOST = ''   #host aberto para aceitar conexões de qualquer endereço (mais flexivel)
 PORT = 50007
@@ -29,33 +31,34 @@ def atender_cliente(conn, addr):
             while "\n" in buffer: #caso exista pelomenos uma linha completa...
                 linha, buffer = buffer.split("\n", 1)   #...corta na primeira \n
 
-                if linha.startswith(':'):
-                    partes = linha.split()  #separa ":txt" do valor que vem depois
-                    try:
-                        comando = partes[0]
-                        valor = int(partes[1])  #'10' texto -> 10 numero
+                with lock:
+                    if linha.startswith(':'):
+                        partes = linha.split()  #separa ":txt" do valor que vem depois
+                        try:
+                            comando = partes[0]
+                            valor = int(partes[1])  #'10' texto -> 10 numero
 
-                        if comando == ':inicio':
-                            resposta = loteria.set_min_value(valor) + '\n'
-                        elif comando == ':fim':
-                            resposta = loteria.set_max_value(valor) + '\n'
-                        elif comando == ':qtd':
-                            resposta = loteria.qtd_numeros_sorteador(valor) + '\n'
-                        else:
-                            resposta = 'ERRO: comando desconhecido\n'   #":" chegou, mas comando não existe
+                            if comando == ':inicio':
+                                resposta = loteria.set_min_value(valor) + '\n'
+                            elif comando == ':fim':
+                                resposta = loteria.set_max_value(valor) + '\n'
+                            elif comando == ':qtd':
+                                resposta = loteria.qtd_numeros_sorteador(valor) + '\n'
+                            else:
+                                resposta = 'ERRO: comando desconhecido\n'   #":" chegou, mas comando não existe
 
-                    except (ValueError, IndexError):
-                        resposta = 'ERRO: Comando mal formado\n'
-                    except LoteriaException as e:   #regra do jogo violada
-                        resposta = f'ERRO: {e}\n'
+                        except (ValueError, IndexError):
+                            resposta = 'ERRO: Comando mal formado\n'
+                        except LoteriaException as e:   #regra do jogo violada
+                            resposta = f'ERRO: {e}\n'
 
-                else:
-                    if not linha.split():   #se for um espaço ou enter, só continua sem erro. Não faz nada
-                        continue
-                    try: 
-                        resposta = loteria.add_ticket(linha) + '\n'
-                    except AddTicketException as e:
-                        resposta = f'ERRO: {e}\n'
+                    else:
+                        if not linha.split():   #se for um espaço ou enter, só continua sem erro. Não faz nada
+                            continue
+                        try: 
+                            resposta = loteria.add_ticket(linha) + '\n'
+                        except AddTicketException as e:
+                            resposta = f'ERRO: {e}\n'
                 conn.sendall(resposta.encode()) #ponto de envio
                 print(f'recebido: {linha} | Apostas: {loteria.fetch_tickets()}')    #olha e printa loteria.TICKETS
 
