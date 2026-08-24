@@ -14,10 +14,18 @@ def atender_cliente(conn, addr):
         msg = f'{horario} - CONECTADO!!\n' #mensagem com o horario de conexão do cliente
         conn.sendall(msg.encode())  #envia a mensagem em bytes para o cliente
 
-        while True:
+        buffer = "" #aguarda bytes chegando até formar linha completa
+        while True: #enquanto o cliente existir
             data = conn.recv(1024)
             if not data: break
-            conn.sendall(data)
+            buffer += data.decode() #despeja o pedaço na caixa, somando o que ja havia
+
+            while "\n" in buffer: #caso exista pelomenos uma linha completa...
+                linha, buffer = buffer.split("\n", 1)   #...corta na primeira \n
+                print(f'Recebido: {linha}')
+                conn.sendall((linha + '\n').encode())
+
+
     horario_fim = datetime.now().strftime("%d/%m/%Y %H:%M:%S")  #horario_fim deve ser diferente
     print('Conexão encerrada por', addr, 'às', horario_fim)
 
