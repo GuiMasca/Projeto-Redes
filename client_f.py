@@ -27,7 +27,6 @@ def receive_messages(sock, stop_event, bet_allowed):
                 bet_allowed.set()
                 show_bet_prompt()
             elif 'ERRO:' in message:
-                # A aposta não foi aceita; libera uma nova tentativa.
                 bet_allowed.set()
                 show_bet_prompt()
 
@@ -56,12 +55,9 @@ def send_messages(sock, stop_event, bet_allowed):
         if message.lower() == 'exit':
             break
 
-        # Impede outra aposta até o servidor rejeitar a atual ou realizar o
-        # sorteio. Assim o cliente permanece no estado "aguarde".
         bet_allowed.clear()
 
         try:
-            # O servidor separa comandos e apostas por linhas.
             sock.sendall((message + '\n').encode())
         except OSError as e:
             if not stop_event.is_set():
@@ -109,18 +105,15 @@ def main():
 
         receive_thread = threading.Thread(
             target=receive_messages,
-            args=(sock, stop_event, bet_allowed)
+            args=(sock, stop_event, bet_allowed),
         )
-
         receive_thread.start()
 
-        send_thread = threading.Thread(
+        threading.Thread(
             target=send_messages,
             args=(sock, stop_event, bet_allowed),
-            daemon=True
-        )
-
-        send_thread.start()
+            daemon=True,
+        ).start()
 
         # A thread de entrada é daemon para não prender o processo caso o
         # servidor desconecte enquanto input() estiver bloqueado.
