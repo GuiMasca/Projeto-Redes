@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lot
 
 import loteria
 from datetime import datetime
-from loteria_exceptions import LoteriaException
+from loteria_exceptions import LoteriaException, AddTicketException
 
 
 HOST = ''   #host aberto para aceitar conexões de qualquer endereço (mais flexivel)
@@ -28,7 +28,6 @@ def atender_cliente(conn, addr):
 
             while "\n" in buffer: #caso exista pelomenos uma linha completa...
                 linha, buffer = buffer.split("\n", 1)   #...corta na primeira \n
-                print(f'Recebido: {linha}')
 
                 if linha.startswith(':'):
                     partes = linha.split()  #separa ":txt" do valor que vem depois
@@ -51,8 +50,15 @@ def atender_cliente(conn, addr):
                         resposta = f'ERRO: {e}\n'
 
                 else:
-                    resposta = 'ainda nao implementado\n'
+                    if not linha.split():   #se for um espaço ou enter, só continua sem erro. Não faz nada
+                        continue
+                    try: 
+                        resposta = loteria.add_ticket(linha) + '\n'
+                    except AddTicketException as e:
+                        resposta = f'ERRO: {e}\n'
                 conn.sendall(resposta.encode()) #ponto de envio
+                print(f'recebido: {linha} | Apostas: {loteria.fetch_tickets()}')    #olha e printa loteria.TICKETS
+
 
 
 
