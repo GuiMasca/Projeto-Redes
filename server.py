@@ -3,246 +3,136 @@ import threading
 import sys
 import os
 import time
-from datetime import datetime
-
-# o módulo loteria fica na pasta irmã "loteria/"; ajusta o sys.path para o
-# interpretador encontrar "loteria.py" e "loteria_exceptions.py"
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'loteria'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'loteria')) #esta linha só serve para que o python leia a pasta da loteria
 
 import loteria
-from loteria_exceptions import LoteriaException
+from datetime import datetime
+from loteria_exceptions import LoteriaException, AddTicketException
 
-# protege as chamadas às funções de loteria, pois elas usam variáveis globais
-lock_loteria = threading.Lock()
-# protege a lista de conexões ativas, pois cada cliente roda em sua própria thread
-lock_clientes = threading.Lock()
-# protege o envio pelos sockets, pois várias threads podem enviar ao mesmo tempo
+
+lock = threading.Lock()
 lock_envio = threading.Lock()
 
-# conexões ativas; a sessão de loteria é única e compartilhada por todos
-clientes = []
+def ciclo_sorteio(conn, encerrar):
+    while True:
+        for _ in range(60): #dorme por 60 segundos, em 60 sonos de 1 segundo
+            if encerrar.is_set():
+                return
+            time.sleep(1)   #sono de 1 segundo
 
-# flag global que coordena o encerramento do servidor e das threads
-servidor_ativo = True
+        with lock:
+            vencedores = loteria.temp_numbers_sort()    #sorteia e calcula
+            sorteados = loteria.SORTED_NUMBERS  #guarda cópia dos sorteados
+            loteria.TICKETS.clear() #zera as apostas para o proximo ciclo
+        mensagem = montar_mensagem_resultado(sorteados, vencedores)
+        print(f'Sorteio realizado:\n{mensagem}', end='')   #registro completo no servidor: numeros sorteados e ganhadores
 
-HOST = ''
+        with lock_envio:
+            try:
+                conn.sendall(mensagem.encode())
+            except OSError:          #cliente sumiu entre dois sorteios: relojoeiro vai embora sem traceback
+                return
+
+HOST = ''   #host aberto para aceitar conexões de qualquer endereço (mais flexivel)
 PORT = 50007
-# intervalo (em segundos) entre os sorteios; extraído para constante para
-# acelerar os testes de integração (é só reduzir o valor durante os testes)
-TEMPO_SORTEIO = 60
-
-
-def processar_mensagem(texto):
-    """Interpreta o texto cru do cliente e chama a função correspondente do módulo loteria.
-
-    - Começa com ":" -> comando de configuração (:inicio, :fim, :qtd).
-    - Caso contrário -> aposta (números separados por espaço).
-
-    Retorna a string de resposta. Isolada do socket para poder ser testada sem rede.
-    """
-    texto = texto.strip()
-
-    with lock_loteria:
-        try:
-            if texto.startswith(':inicio'):
-                valor = int(texto.split()[1])
-                return loteria.set_min_value(valor)
-
-            elif texto.startswith(':fim'):
-                valor = int(texto.split()[1])
-                return loteria.set_max_value(valor)
-
-            elif texto.startswith(':qtd'):
-                valor = int(texto.split()[1])
-                return loteria.qtd_numeros_sorteador(valor)
-
-            else:
-                # não começa com ":" -> é uma aposta
-                return loteria.add_ticket(texto)
-
-        except LoteriaException as e:
-            return f"ERRO: {e}"
-        except (ValueError, IndexError):
-            return "ERRO: Comando mal formatado"
-
 
 def montar_mensagem_resultado(sorteados, vencedores):
-    """Monta a string de resultado: números sorteados e, por aposta vencedora, quais números acertou."""
-    linha_sorteio = f"Números sorteados: {sorted(sorteados)}"
+    linhas = [f'Números sorteados: {sorted(sorteados)}']
 
-    sorteados_set = set(sorteados)
-
-    linha_vencedores = []
-    # WINNER_TICKETS é uma lista onde o índice é a quantidade de acertos
-    for qtd_acertos, tickets in enumerate(vencedores):
-        if qtd_acertos == 0 or not tickets:
+    for qtd_acertos, apostas in enumerate(vencedores):
+        if qtd_acertos == 0 or not apostas:
             continue
-        for ticket in tickets:
-            # cada aposta é um set de ints; mostra a interseção com o sorteio
-            acertados = sorted(sorteados_set & ticket)
-            linha_vencedores.append(f"Aposta {sorted(ticket)} acertou {qtd_acertos} número(s): {acertados}")
+        for aposta in apostas:
+            acertos = sorted(set(sorteados) & aposta)
+            linhas.append(f'Aposta {sorted(aposta)} acertou {qtd_acertos} numero(s): {acertos}')
 
-    if not linha_vencedores:
-        linha_vencedores.append("Nenhum vencedor nesta rodada.")
+    if len(linhas) == 1:
+        linhas.append('nenhum vencedor nesta rodada')
 
-    return linha_sorteio + "\n" + "\n".join(linha_vencedores)
-
-
-def enviar(conn, texto):
-    """Envia um texto ao cliente garantindo o delimitador '\n' no final.
-
-    O TCP é um fluxo de bytes sem fronteiras de mensagem: sem um delimitador
-    consistente, respostas consecutivas podem chegar agrupadas no cliente.
-    """
-    if not texto.endswith('\n'):
-        texto += '\n'
-
-    with lock_envio:
-        conn.sendall(texto.encode())
+    return '\n'.join(linhas) + '\n'
 
 
-def broadcast(texto):
-    """Envia uma mensagem a todos os clientes conectados; descarta quem falhar."""
-    with lock_clientes:
-        destinatarios = list(clientes)
+def atender_cliente(conn, addr, encerrar):
+    horario = datetime.now().strftime("%d/%m/%Y %H:%M:%S")      #define o texto do horario: dia, mes, ano, hora, minuto, segundo
+    with conn:
+        print('conexão estabelecida com', addr, 'às', horario)
+        msg = f'{horario} - CONECTADO!!\n' #mensagem com o horario de conexão do cliente
+        conn.sendall(msg.encode())  #envia a mensagem em bytes para o cliente
 
-    for conn in destinatarios:
-        try:
-            enviar(conn, texto)
-        except OSError:
-            remover_cliente(conn)
-
-
-def remover_cliente(conn):
-    """Tira a conexão da lista de clientes e fecha o socket (é idempotente)."""
-    with lock_clientes:
-        if conn in clientes:
-            clientes.remove(conn)
-
-    try:
-        conn.close()
-    except OSError:
-        pass
-
-
-def thread_receber_cliente(conn, addr):
-    """Loop de leitura de UM cliente.
-
-    O TCP não garante que uma linha completa chegue em um único recv(), então
-    acumula os blocos recebidos em um buffer e só processa até o último '\n',
-    preservando a fração final da linha que ainda está incompleta.
-    """
-    try:
-        horario = datetime.now().strftime("%H:%M:%S")
-        enviar(conn, f"{horario}: CONECTADO!!")
-
-        buffer = ""
-
-        while servidor_ativo:
+        buffer = "" #aguarda bytes chegando até formar linha completa
+        while True: #enquanto o cliente existir
             try:
-                dados = conn.recv(1024)
-            except OSError:
+                data = conn.recv(1024)   #espera uma mensagem do cliente
+            except OSError:              #conexao caiu de forma abrupta (reset de rede): mesmo destino do fim normal
                 break
+            if not data: break           #recv vazio = cliente fechou do jeito limpo
+            buffer += data.decode() #despeja o pedaço na caixa, somando o que ja havia
 
-            if not dados:
-                # recv() retornou vazio -> cliente fechou a conexão
-                break
+            while "\n" in buffer: #caso exista pelomenos uma linha completa...
+                linha, buffer = buffer.split("\n", 1)   #...corta na primeira \n
 
-            buffer += dados.decode(errors="replace")
+                with lock:
+                    if linha.startswith(':'):
+                        partes = linha.split()  #separa ":txt" do valor que vem depois
+                        try:
+                            comando = partes[0]
+                            valor = int(partes[1])  #'10' texto -> 10 numero
 
-            while '\n' in buffer:
-                linha, buffer = buffer.split('\n', 1)
+                            if comando == ':inicio':
+                                resposta = loteria.set_min_value(valor) + '\n'
+                            elif comando == ':fim':
+                                resposta = loteria.set_max_value(valor) + '\n'
+                            elif comando == ':qtd':
+                                resposta = loteria.qtd_numeros_sorteador(valor) + '\n'
+                            else:
+                                resposta = 'ERRO: comando desconhecido\n'   #":" chegou, mas comando não existe
 
-                if not linha.strip():
-                    continue
+                        except (ValueError, IndexError):
+                            resposta = 'ERRO: Comando mal formado\n'
+                        except LoteriaException as e:   #regra do jogo violada
+                            resposta = f'ERRO: {e}\n'
 
-                print(f"Recebido de {addr}: {linha}")
-
-                try:
-                    resposta = processar_mensagem(linha)
-                except Exception as e:
-                    print(f"[Cliente {addr}] Erro ao processar mensagem: {e}")
-                    resposta = "ERRO: Ocorreu um problema interno do servidor."
-
-                try:
-                    enviar(conn, resposta)
-                except OSError:
-                    return
-
-    finally:
-        remover_cliente(conn)
-        print(f"Cliente desconectado: {addr}")
-
-
-def thread_sorteio():
-    """A cada TEMPO_SORTEIO segundos: sorteia, transmite o resultado a todos os clientes e zera as apostas."""
-    while servidor_ativo:
-        # dorme em passos de 1s para reagir rápido ao encerramento do servidor
-        for _ in range(TEMPO_SORTEIO):
-            if not servidor_ativo:
-                return
-            time.sleep(1)
-
-        try:
-            with lock_loteria:
-                loteria.temp_numbers_sort()
-                sorteados = loteria.SORTED_NUMBERS
-                vencedores = loteria.WINNER_TICKETS
-                # zera a lista de apostas para o próximo ciclo
-                loteria.TICKETS.clear()
-
-            mensagem = montar_mensagem_resultado(sorteados, vencedores)
-
-        except Exception as e:
-            print(f"[Sorteio] Erro ao realizar sorteio: {e}")
-            continue
-
-        print("Sorteio realizado:", sorted(sorteados))
-        broadcast(mensagem)
+                    else:
+                        if not linha.split():   #se for um espaço ou enter, só continua sem erro. Não faz nada
+                            continue
+                        try: 
+                            resposta = loteria.add_ticket(linha) + '\n'
+                        except AddTicketException as e:
+                            resposta = f'ERRO: {e}\n'
+                with lock_envio:
+                    conn.sendall(resposta.encode()) #ponto de envio
+                print(f'recebido: {linha} | Apostas: {loteria.fetch_tickets()}')    #olha e printa loteria.TICKETS
 
 
-if __name__ == "__main__":
+    horario_fim = datetime.now().strftime("%d/%m/%Y %H:%M:%S")  #horario_fim deve ser diferente
+    print('Conexão encerrada por', addr, 'às', horario_fim)
+    encerrar.set()  #avisa t2 que o jogo acabou
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind((HOST, PORT))
-        s.listen(5)
 
-        # sessão única e compartilhada: começa do zero a cada execução do servidor
-        with lock_loteria:
-            loteria.reset_all()
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 
-        print(f"Servidor aguardando conexões na porta {PORT}... (Ctrl+C para encerrar)")
+    #define opção do socket(no nivel do socket, qual opção, ligado)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)     #no linux, fechar o server com ctrl+c não libera a linha. Essa parte corrige isso, permitindo checar o codigo mais rapidamente.
+    s.bind((HOST, PORT))
+    s.listen(5)     #de padrão vem 1, mas eu quero que mais clientes possam se conectar ao mesmo tempo, então coloco 5.
 
-        threading.Thread(target=thread_sorteio, daemon=True).start()
+    try:
+        while True:
+            conn, addr = s.accept()
 
-        try:
-            # aceita clientes em paralelo: cada conexão ganha sua própria thread
-            # de leitura e continua participando da mesma sessão de loteria
-            while True:
-                conn, addr = s.accept()
-                print('Conectado por', addr)
+            #sessao zerada para cada novo cliente: nada de configuracao
+            #ou apostas herdadas da conexao anterior
+            with lock:
+                loteria.reset_all()
 
-                with lock_clientes:
-                    clientes.append(conn)
+            encerrar = threading.Event()
+            t1 = threading.Thread(target=atender_cliente, args=(conn, addr, encerrar), daemon=True)  #cria uma thread ("funcionario") para cada cliente que se conecta; daemon=True: encerra junto com o servidor
+            t2 = threading.Thread(target=ciclo_sorteio, args=(conn, encerrar), daemon=True)  #cria a thread do relojoeiro; daemon idem
+            t1.start() #coloca as threads ("funcionarios") para trabalhar
+            t2.start()
 
-                threading.Thread(
-                    target=thread_receber_cliente,
-                    args=(conn, addr),
-                    daemon=True
-                ).start()
+            t1.join() #proximo accept() só depois que o cliente atual saír
+            t2.join()
 
-        except KeyboardInterrupt:
-            print("\nCtrl+C recebido: encerrando o servidor...")
-        finally:
-            servidor_ativo = False
-
-            with lock_clientes:
-                for c in clientes:
-                    try:
-                        c.close()
-                    except OSError:
-                        pass
-                clientes.clear()
-
-            print("Servidor encerrado.")
+    except KeyboardInterrupt:  #Ctrl+C do usuario: sai do laco e encerra sem traceback
+        print('\nServidor encerrado pelo usuario.')
