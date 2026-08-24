@@ -2,11 +2,21 @@ import socket
 import threading
 import sys
 import os
+import time
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'loteria')) #esta linha só serve para que o python leia a pasta da loteria
 
 import loteria
 from datetime import datetime
 from loteria_exceptions import LoteriaException, AddTicketException
+
+def ciclo_sorteio(conn, encerrar):
+    while True:
+        for _ in range(60): #dorme por 60 segundos, em 60 sonos de 1 segundo
+            if encerrar.is_set():
+                return
+            time.sleep(1)   #sono de 1 segundo
+        conn.sendall(b'sorteio de teste\n')
+
 
 lock = threading.Lock()
 
@@ -15,7 +25,7 @@ HOST = ''   #host aberto para aceitar conexões de qualquer endereço (mais flex
 PORT = 50007
 
 
-def atender_cliente(conn, addr):
+def atender_cliente(conn, addr, encerrar):
     horario = datetime.now().strftime("%d/%m/%Y %H:%M:%S")      #define o texto do horario: dia, mes, ano, hora, minuto, segundo
     with conn:
         print('conexão estabelecida com', addr, 'às', horario)
@@ -63,10 +73,9 @@ def atender_cliente(conn, addr):
                 print(f'recebido: {linha} | Apostas: {loteria.fetch_tickets()}')    #olha e printa loteria.TICKETS
 
 
-
-
     horario_fim = datetime.now().strftime("%d/%m/%Y %H:%M:%S")  #horario_fim deve ser diferente
     print('Conexão encerrada por', addr, 'às', horario_fim)
+    encerrar.set()  #avisa t2 que o jogo acabou
 
 
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -78,6 +87,12 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 
     while True:
         conn, addr = s.accept()
-        t1 = threading.Thread(target=atender_cliente, args=(conn, addr))  #cria uma thread ("funcionario") para cada cliente que se conecta
+        encerrar = threading.Event()
+        t1 = threading.Thread(target=atender_cliente, args=(conn, addr, encerrar))  #cria uma thread ("funcionario") para cada cliente que se conecta
+        t2 = threading.Thread(target=ciclo_sorteio, args=(conn, encerrar))  #cria uma thread 
         t1.start() #coloca a thread ("funcionario") para trabalhar
+        t2.start()  
+
         t1.join() #proximo accept() só depois que o cliente atual saír
+        t2.join()
+        
