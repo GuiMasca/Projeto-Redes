@@ -1,4 +1,7 @@
 import socket
+from datetime import datetime
+
+horario = datetime.now().strftime("%d/%m/%Y %H:%M:%S")      #define o texto do horario: dia, mes, ano, hora, minuto, segundo
 
 HOST = ''   #host aberto para aceitar conexões de qualquer endereço (mais flexivel) 
 PORT = 50007              
@@ -12,9 +15,12 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     while True:     #permite que o servidor "viva para sempre"
         conn, addr = s.accept()  #aceita a conexão do cliente, agora dentro do loop
         with conn:
-            print('Connected by', addr)
+            print('conexão estabelecida com', addr, 'ás', horario)
+            msg = f'{horario} - CONECTADO!!\n' #mensagem com o horario de conexão do cliente
+            conn.sendall(msg.encode())  #envia a mensagem em bytes para o cliente
+
             while True:
                 data = conn.recv(1024)
                 if not data: break
                 conn.sendall(data)
-        print('Conexão encerrada por', addr)
+        print('Conexão encerrada por', addr, 'ás', horario)
