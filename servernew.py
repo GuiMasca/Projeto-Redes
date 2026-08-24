@@ -1,6 +1,12 @@
 import socket
 import threading
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'loteria')) #esta linha só serve para que o python leia a pasta da loteria
+
+import loteria
 from datetime import datetime
+from loteria_exceptions import LoteriaException
 
 
 HOST = ''   #host aberto para aceitar conexões de qualquer endereço (mais flexivel)
@@ -23,7 +29,31 @@ def atender_cliente(conn, addr):
             while "\n" in buffer: #caso exista pelomenos uma linha completa...
                 linha, buffer = buffer.split("\n", 1)   #...corta na primeira \n
                 print(f'Recebido: {linha}')
-                conn.sendall((linha + '\n').encode())
+
+                if linha.startswith(':'):
+                    partes = linha.split()  #separa ":txt" do valor que vem depois
+                    try:
+                        comando = partes[0]
+                        valor = int(partes[1])  #'10' texto -> 10 numero
+
+                        if comando == ':inicio':
+                            resposta = loteria.set_min_value(valor) + '\n'
+                        elif comando == ':fim':
+                            resposta = loteria.set_max_value(valor) + '\n'
+                        elif comando == ':qtd':
+                            resposta = loteria.qtd_numeros_sorteador(valor) + '\n'
+                        else:
+                            resposta = 'ERRO: comando desconhecido\n'   #":" chegou, mas comando não existe
+
+                    except (ValueError, IndexError):
+                        resposta = 'ERRO: Comando mal formado\n'
+                    except LoteriaException as e:   #regra do jogo violada
+                        resposta = f'ERRO: {e}\n'
+
+                else:
+                    resposta = 'ainda nao implementado\n'
+                conn.sendall(resposta.encode()) #ponto de envio
+
 
 
     horario_fim = datetime.now().strftime("%d/%m/%Y %H:%M:%S")  #horario_fim deve ser diferente
