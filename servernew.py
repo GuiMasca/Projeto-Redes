@@ -14,6 +14,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 
     while True:     #permite que o servidor "viva para sempre"
         conn, addr = s.accept()  #aceita a conexão do cliente, agora dentro do loop
+        horario = datetime.now().strftime("%d/%m/%Y %H:%M:%S")      #define o texto do horario: dia, mes, ano, hora, minuto, segundo
         with conn:
             print('conexão estabelecida com', addr, 'ás', horario)
             msg = f'{horario} - CONECTADO!!\n' #mensagem com o horario de conexão do cliente
