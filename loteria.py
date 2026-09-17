@@ -6,6 +6,10 @@
 
 import random
 
+import sys
+import os
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'loteria'))
 from loteria_exceptions import LoteriaException, ParameterSetException, AddTicketException
 
 # funções auxiliares
