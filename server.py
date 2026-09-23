@@ -6,8 +6,13 @@ from datetime import datetime
 import loteria
 from loteria import AddTicketException, LoteriaException
 
+import server_exception
+from server_exception import ServerException, ClientLimitReachedException
+
 lock = threading.Lock()
 lock_envio = threading.Lock()
+limite_clientes = 5
+quantidade_clientes = 0
 
 def ciclo_sorteio(conn, encerrar):
     while True:
