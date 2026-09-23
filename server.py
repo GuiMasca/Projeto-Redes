@@ -1,14 +1,10 @@
 import socket
 import threading
-import sys
-import os
 import time
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'loteria')) #esta linha só serve para que o python leia a pasta da loteria
+from datetime import datetime
 
 import loteria
-from datetime import datetime
-from loteria_exceptions import LoteriaException, AddTicketException
-
+from loteria import AddTicketException, LoteriaException
 
 lock = threading.Lock()
 lock_envio = threading.Lock()
