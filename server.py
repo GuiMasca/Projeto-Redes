@@ -11,7 +11,7 @@ from server_exception import ServerException, ClientLimitReachedException
 
 lock = threading.Lock()
 lock_envio = threading.Lock()
-limite_clientes = 5
+limite_clientes = 2     # setar por linha de comando 
 quantidade_clientes = 0
 
 def ciclo_sorteio(conn, encerrar):
@@ -54,61 +54,77 @@ def montar_mensagem_resultado(sorteados, vencedores):
 
 
 def atender_cliente(conn, addr, encerrar):
+    global quantidade_clientes
     horario = datetime.now().strftime("%d/%m/%Y %H:%M:%S")      #define o texto do horario: dia, mes, ano, hora, minuto, segundo
-    with conn:
-        print('conexão estabelecida com', addr, 'às', horario)
-        msg = f'{horario} - CONECTADO!!\n' #mensagem com o horario de conexão do cliente
-        conn.sendall(msg.encode())  #envia a mensagem em bytes para o cliente
 
-        buffer = "" #aguarda bytes chegando até formar linha completa
-        while True: #enquanto o cliente existir
-            try:
-                data = conn.recv(1024)   #espera uma mensagem do cliente
-            except OSError:              #conexao caiu de forma abrupta (reset de rede): mesmo destino do fim normal
-                break
-            if not data: break           #recv vazio = cliente fechou do jeito limpo
-            buffer += data.decode() #despeja o pedaço na caixa, somando o que ja havia
+    try:
+        with conn:
+            print('conexão estabelecida com', addr, 'às', horario)
+            msg = f'{horario} - CONECTADO!!\n' #mensagem com o horario de conexão do cliente
+            conn.sendall(msg.encode())  #envia a mensagem em bytes para o cliente
+            buffer = "" #aguarda bytes chegando até formar linha completa
+            conectado = True
 
-            while "\n" in buffer: #caso exista pelomenos uma linha completa...
-                linha, buffer = buffer.split("\n", 1)   #...corta na primeira \n
+            while conectado: #enquanto o cliente existir
+                try:
+                    data = conn.recv(1024)   #espera uma mensagem do cliente
+                except OSError:              #conexao caiu de forma abrupta (reset de rede): mesmo destino do fim normal
+                    break
+                if not data: break           #recv vazio = cliente fechou do jeito limpo
+                buffer += data.decode() #despeja o pedaço na caixa, somando o que ja havia
 
-                with lock:
-                    if linha.startswith(':'):
-                        partes = linha.split()  #separa ":txt" do valor que vem depois
-                        try:
-                            comando = partes[0]
-                            valor = int(partes[1])  #'10' texto -> 10 numero
+                while "\n" in buffer: #caso exista pelomenos uma linha completa...
+                    linha, buffer = buffer.split("\n", 1)   #...corta na primeira \n
+                    linha_limpa = linha.strip()
 
-                            if comando == ':inicio':
-                                resposta = loteria.set_min_value(valor) + '\n'
-                            elif comando == ':fim':
-                                resposta = loteria.set_max_value(valor) + '\n'
-                            elif comando == ':qtd':
-                                resposta = loteria.qtd_numeros_sorteador(valor) + '\n'
-                            else:
-                                resposta = 'ERRO: comando desconhecido\n'   #":" chegou, mas comando não existe
+                    with lock:
+                        if (linha_limpa == ":sair") :
+                            resposta = "Desconectado com sucesso\n"
+                            conectado = False
 
-                        except (ValueError, IndexError):
-                            resposta = 'ERRO: Comando mal formado\n'
-                        except LoteriaException as e:   #regra do jogo violada
-                            resposta = f'ERRO: {e}\n'
+                        elif linha.startswith(':'):
+                            partes = linha.split()  #separa ":txt" do valor que vem depois
+                            try:
+                                comando = partes[0]
+                                valor = int(partes[1])  #'10' texto -> 10 numero
 
-                    else:
-                        if not linha.split():   #se for um espaço ou enter, só continua sem erro. Não faz nada
-                            continue
-                        try: 
-                            resposta = loteria.add_ticket(linha) + '\n'
-                        except AddTicketException as e:
-                            resposta = f'ERRO: {e}\n'
-                with lock_envio:
-                    conn.sendall(resposta.encode()) #ponto de envio
-                print(f'recebido: {linha} | Apostas: {loteria.fetch_tickets()}')    #olha e printa loteria.TICKETS
+                                if comando == ':inicio':
+                                    resposta = loteria.set_min_value(valor) + '\n'
+                                elif comando == ':fim':
+                                    resposta = loteria.set_max_value(valor) + '\n'
+                                elif comando == ':qtd':
+                                    resposta = loteria.qtd_numeros_sorteador(valor) + '\n'
+                                else:
+                                    resposta = 'ERRO: comando desconhecido\n'   #":" chegou, mas comando não existe
 
+                            except (ValueError, IndexError):
+                                resposta = 'ERRO: Comando mal formado\n'
+                            except LoteriaException as e:   #regra do jogo violada
+                                resposta = f'ERRO: {e}\n'
 
-    horario_fim = datetime.now().strftime("%d/%m/%Y %H:%M:%S")  #horario_fim deve ser diferente
-    print('Conexão encerrada por', addr, 'às', horario_fim)
-    encerrar.set()  #avisa t2 que o jogo acabou
+                        else:
+                            if not linha_limpa :
+                                continue
 
+                            try:
+                                resposta = loteria.add_ticket(linha_limpa) + '\n'
+                            except AddTicketException as e:
+                                resposta = f'ERRO:{e}\n'
+
+                    with lock_envio:
+                        conn.sendall(resposta.encode()) #ponto de envio
+
+                    if not conectado:
+                        break
+                    
+                    print(f'recebido: {linha} | Apostas: {loteria.fetch_tickets()}')    #olha e printa loteria.TICKETS
+
+    finally:
+        with lock:
+            quantidade_clientes -= 1
+        encerrar.set() #avisa t2 que o jogo acabou
+        horario_fim = datetime.now().strftime("%d/%m/%Y %H:%M:%S")  #horario_fim deve ser diferente
+        print('Conexão encerrada por', addr, 'às', horario_fim)
 
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 
@@ -121,19 +137,24 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         while True:
             conn, addr = s.accept()
 
+            with lock:
+                if (quantidade_clientes >= limite_clientes) :
+                    conn.sendall("Limite de clientes excedido. A conexão será encerrada\n".encode())
+                    conn.close()
+                    continue
+
+                quantidade_clientes += 1
+
             #sessao zerada para cada novo cliente: nada de configuracao
             #ou apostas herdadas da conexao anterior
-            with lock:
-                loteria.reset_all()
+            # with lock:
+            #   loteria.reset_all()
 
             encerrar = threading.Event()
             t1 = threading.Thread(target=atender_cliente, args=(conn, addr, encerrar), daemon=True)  #cria uma thread ("funcionario") para cada cliente que se conecta; daemon=True: encerra junto com o servidor
             t2 = threading.Thread(target=ciclo_sorteio, args=(conn, encerrar), daemon=True)  #cria a thread do relojoeiro; daemon idem
             t1.start() #coloca as threads ("funcionarios") para trabalhar
             t2.start()
-
-            t1.join() #proximo accept() só depois que o cliente atual saír
-            t2.join()
 
     except KeyboardInterrupt:  #Ctrl+C do usuario: sai do laco e encerra sem traceback
         print('\nServidor encerrado pelo usuario.')
