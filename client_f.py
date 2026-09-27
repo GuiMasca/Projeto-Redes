@@ -52,8 +52,17 @@ def send_messages(sock, stop_event, bet_allowed):
         except (EOFError, KeyboardInterrupt):
             message = 'exit'
 
-        if message.lower() == 'exit':
+        # Parte 1 (Fase 2): avisa o servidor antes de sair.
+        # ':sair' é o comando oficial; 'exit' é só um apelido local.
+        # Envia ':sair\n' via TCP (\n fecha a linha que o servidor espera)
+        # e só depois quebra o loop para encerrar o cliente.
+        if message.strip().lower() in (':sair', 'exit'):
+            try:
+                sock.sendall(b':sair\n')
+            except OSError:
+                pass
             break
+            
 
         bet_allowed.clear()
 
