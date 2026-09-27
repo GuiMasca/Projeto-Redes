@@ -46,10 +46,6 @@ def receive_messages(sock, stop_event, bet_allowed):
 
 def send_messages(sock, stop_event, bet_allowed):
     while not stop_event.is_set():
-        bet_allowed.wait()
-        if stop_event.is_set():
-            break
-
         try:
             message = input()
         except (EOFError, KeyboardInterrupt):
@@ -62,9 +58,13 @@ def send_messages(sock, stop_event, bet_allowed):
             except OSError:
                 pass
             break
-            
 
+        #aposta espera liberar; :sair acima nunca espera
+        bet_allowed.wait()
+        if stop_event.is_set():
+            break
         bet_allowed.clear()
+            
 
         try:
             sock.sendall((message + '\n').encode())
