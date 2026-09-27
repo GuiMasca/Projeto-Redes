@@ -20,8 +20,10 @@ def receive_messages(sock, stop_event, bet_allowed):
             message = data.decode()
             print('\nRecebido:', message)
 
-            #encerra ao receber confirmação de saída
+            #encerra ao receber confirmação de saída ou limite
             if 'Desconectado com sucesso' in message:
+                break
+            elif 'Limite' in message:
                 break
             elif 'foi adicionada com sucesso' in message:
                 print('Aposta confirmada! Aguarde os resultados do sorteio.')
@@ -111,11 +113,12 @@ def main():
             print('Erro ao receber dados:', e)
             return
 
-        print("Conectado ao servidor. Digite 'exit' para sair.")
+        print("Conectado ao servidor. Digite ':sair' para sair (ou 'exit').")
         print("\nCOMO JOGAR")
         print("- Faça sua aposta digitando 5 números separados por espaços.")
         print("  Exemplo: 1 2 3 4 5")
         print("- Após a confirmação da aposta, aguarde o resultado do sorteio.\n")
+        print("- Digite :sair a qualquer momento para desconectar.\n")
         show_bet_prompt()
 
         receive_thread = threading.Thread(
