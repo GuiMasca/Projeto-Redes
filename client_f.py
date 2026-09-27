@@ -20,7 +20,10 @@ def receive_messages(sock, stop_event, bet_allowed):
             message = data.decode()
             print('\nRecebido:', message)
 
-            if 'foi adicionada com sucesso' in message:
+            #encerra ao receber confirmação de saída
+            if 'Desconectado com sucesso' in message:
+                break
+            elif 'foi adicionada com sucesso' in message:
                 print('Aposta confirmada! Aguarde os resultados do sorteio.')
             elif 'Números sorteados:' in message:
                 print('Rodada encerrada. Uma nova aposta pode ser feita.')
@@ -52,10 +55,7 @@ def send_messages(sock, stop_event, bet_allowed):
         except (EOFError, KeyboardInterrupt):
             message = 'exit'
 
-        # Parte 1 (Fase 2): avisa o servidor antes de sair.
-        # ':sair' é o comando oficial; 'exit' é só um apelido local.
-        # Envia ':sair\n' via TCP (\n fecha a linha que o servidor espera)
-        # e só depois quebra o loop para encerrar o cliente.
+        #envia :sair ('exit' é apelido) antes de sair
         if message.strip().lower() in (':sair', 'exit'):
             try:
                 sock.sendall(b':sair\n')
