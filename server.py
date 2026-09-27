@@ -1,4 +1,5 @@
 import socket
+import sys
 import threading
 import time
 from datetime import datetime
@@ -11,7 +12,17 @@ from server_exception import ServerException, ClientLimitReachedException
 
 lock = threading.Lock()
 lock_envio = threading.Lock()
-limite_clientes = 2     # setar por linha de comando 
+if len(sys.argv) != 2:
+    sys.exit(f'Uso: python3 {sys.argv[0]} <limite_clientes> (inteiro maior que zero)')
+
+try:
+    limite_clientes = int(sys.argv[1])
+except ValueError:
+    sys.exit(f'Uso: python3 {sys.argv[0]} <limite_clientes> (inteiro maior que zero)')
+
+if limite_clientes <= 0:
+    sys.exit(f'Uso: python3 {sys.argv[0]} <limite_clientes> (inteiro maior que zero)')
+
 quantidade_clientes = 0
 
 def ciclo_sorteio(conn, encerrar):
@@ -131,7 +142,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     #define opção do socket(no nivel do socket, qual opção, ligado)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)     #no linux, fechar o server com ctrl+c não libera a linha. Essa parte corrige isso, permitindo checar o codigo mais rapidamente.
     s.bind((HOST, PORT))
-    s.listen(5)     #de padrão vem 1, mas eu quero que mais clientes possam se conectar ao mesmo tempo, então coloco 5.
+    s.listen(5)     #fila de conexões pendentes; o limite de clientes é verificado após accept().
 
     try:
         while True:
