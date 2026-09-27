@@ -97,7 +97,13 @@ def main():
             if not initial_message:
                 print('Conexão encerrada pelo servidor.')
                 return
-            print('Recebido:', initial_message.decode())
+
+            texto_inicial = initial_message.decode()
+            #encerra se o servidor recusou por limite
+            print('Recebido:', texto_inicial)
+            if 'Limite' in texto_inicial:
+                print('Servidor lotado. Tente novamente mais tarde.')
+                return
         except UnicodeDecodeError:
             print('Erro ao receber dados: mensagem inválida')
             return
