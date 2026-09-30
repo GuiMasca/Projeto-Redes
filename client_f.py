@@ -61,6 +61,15 @@ def send_messages(sock, stop_event, bet_allowed):
                 pass
             break
 
+        if message.strip().startswith(':'):
+            try:
+                sock.sendall((message + '\n').encode())
+            except OSError as e:
+                if not stop_event.is_set():
+                    print('Erro ao enviar dados:', e)
+                break
+            continue
+
         #aposta espera liberar; :sair acima nunca espera
         bet_allowed.wait()
         if stop_event.is_set():
