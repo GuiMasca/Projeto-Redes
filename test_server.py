@@ -81,7 +81,10 @@ class IsolamentoClientesTest(unittest.TestCase):
 
         self.sortear_rodada()
 
-        self.assertIn(b'ERRO:', vazio['conn'].sendall.call_args.args[0])
+        mensagem_vazio = vazio['conn'].sendall.call_args.args[0].decode()
+        self.assertIn('Números sorteados:', mensagem_vazio)
+        self.assertIn('nenhum vencedor nesta rodada', mensagem_vazio)
+        self.assertNotIn('ERRO:', mensagem_vazio)
         self.assertIn('Números sorteados:', apostador['conn'].sendall.call_args.args[0].decode())
         self.assertEqual(apostador['jogo'].fetch_tickets(), [])
 

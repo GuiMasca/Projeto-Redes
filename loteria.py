@@ -46,9 +46,6 @@ class Loteria:
 
 	# funções para setar parâmetros da instância
 	def set_min_value (self, new_value) :
-		if (self.tickets) :
-			raise ParameterSetException("Não é permitido alterar parâmetros com bilhetes cadastrados. Limpe as apostas primeiro.")
-
 		if (new_value < 0) :
 			raise ParameterSetException("Valores negativos não são suportados")
 		
@@ -67,9 +64,6 @@ class Loteria:
 		return f"MIN_VALUE atualizado: {self.min_value}"
 
 	def set_max_value(self, new_value) :
-		if (self.tickets) :
-			raise ParameterSetException("Não é permitido alterar parâmetros com bilhetes cadastrados. Limpe as apostas primeiro.")
-		
 		if(new_value <= self.min_value) :
 			raise ParameterSetException("O valor máximo não pode ser igual ou menor que o minímo")
 
@@ -85,9 +79,6 @@ class Loteria:
 		return f"MAX_VALUE atualizado: {self.max_value}"
 
 	def qtd_numeros_sorteados(self, qtd):
-		if (self.tickets) :
-			raise ParameterSetException("Não é permitido alterar parâmetros com bilhetes cadastrados. Limpe as apostas primeiro.")
-		
 		if (qtd < 1) :
 			raise ParameterSetException("A quantidade de números a serem sorteados deve ser maior que 0")
 
@@ -140,9 +131,6 @@ class Loteria:
 		return self.tickets.copy()
 
 	def realizar_sorteio(self) :
-		if (not self.tickets) :
-			raise LoteriaException("Não é possível realizar o sorteio sem apostas registradas")
-
 		self.winner_tickets = self._build_empty_winner_tickets()
 		self.sorted_numbers = random.sample(range(self.min_value, self.max_value + 1), self.qt_numbers)
 		sorted_set = set(self.sorted_numbers)
