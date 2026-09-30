@@ -20,7 +20,12 @@ def receive_messages(sock, stop_event, bet_allowed):
             message = data.decode()
             print('\nRecebido:', message)
 
-            if 'foi adicionada com sucesso' in message:
+            #encerra ao receber confirmação de saída ou limite
+            if 'Desconectado com sucesso' in message:
+                break
+            elif 'Limite' in message:
+                break
+            elif 'foi adicionada com sucesso' in message:
                 print('Aposta confirmada! Aguarde os resultados do sorteio.')
             elif 'Números sorteados:' in message:
                 print('Rodada encerrada. Uma nova aposta pode ser feita.')
@@ -43,19 +48,25 @@ def receive_messages(sock, stop_event, bet_allowed):
 
 def send_messages(sock, stop_event, bet_allowed):
     while not stop_event.is_set():
-        bet_allowed.wait()
-        if stop_event.is_set():
-            break
-
         try:
             message = input()
         except (EOFError, KeyboardInterrupt):
             message = 'exit'
 
-        if message.lower() == 'exit':
+        #envia :sair ('exit' é apelido) antes de sair
+        if message.strip().lower() in (':sair', 'exit'):
+            try:
+                sock.sendall(b':sair\n')
+            except OSError:
+                pass
             break
 
+        #aposta espera liberar; :sair acima nunca espera
+        bet_allowed.wait()
+        if stop_event.is_set():
+            break
         bet_allowed.clear()
+            
 
         try:
             sock.sendall((message + '\n').encode())
@@ -88,7 +99,13 @@ def main():
             if not initial_message:
                 print('Conexão encerrada pelo servidor.')
                 return
-            print('Recebido:', initial_message.decode())
+
+            texto_inicial = initial_message.decode()
+            #encerra se o servidor recusou por limite
+            print('Recebido:', texto_inicial)
+            if 'Limite' in texto_inicial:
+                print('Servidor lotado. Tente novamente mais tarde.')
+                return
         except UnicodeDecodeError:
             print('Erro ao receber dados: mensagem inválida')
             return
@@ -96,11 +113,12 @@ def main():
             print('Erro ao receber dados:', e)
             return
 
-        print("Conectado ao servidor. Digite 'exit' para sair.")
+        print("Conectado ao servidor. Digite ':sair' para sair (ou 'exit').")
         print("\nCOMO JOGAR")
         print("- Faça sua aposta digitando 5 números separados por espaços.")
         print("  Exemplo: 1 2 3 4 5")
         print("- Após a confirmação da aposta, aguarde o resultado do sorteio.\n")
+        print("- Digite :sair a qualquer momento para desconectar.\n")
         show_bet_prompt()
 
         receive_thread = threading.Thread(
