@@ -4,217 +4,271 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import loteria
+from loteria import Loteria
 from loteria_exceptions import ParameterSetException, AddTicketException
 
-@pytest.fixture(autouse=True)
-def reset_global_variables():
-    loteria.MIN_VALUE = 0
-    loteria.MAX_VALUE = 100
-    loteria.QT_NUMBERS = 5
-    loteria.TICKETS = []
-    loteria.SORTED_NUMBERS = []
-    loteria.WINNER_TICKETS = loteria._build_empty_winner_tickets()
+
+@pytest.fixture
+def jogo():
+    return Loteria()
+
+
+# --- Testes de Inicialização (__init__) ---
+
+def test_init_defaults():
+    l = Loteria()
+    assert l.min_value == 0
+    assert l.max_value == 100
+    assert l.qt_numbers == 5
+    assert l.tickets == []
+    assert l.sorted_numbers == []
+    assert len(l.winner_tickets) == 6
+    assert all(bucket == [] for bucket in l.winner_tickets)
+
+
+def test_init_negative_min_value_exception():
+    with pytest.raises(ParameterSetException) as exc_info:
+        Loteria(min_value=-1)
+    assert "Valores negativos" in str(exc_info.value)
+
+
+def test_init_max_less_or_equal_min_exception():
+    with pytest.raises(ParameterSetException) as exc_info:
+        Loteria(min_value=50, max_value=50)
+    assert "mínimo não deve exceder ou ser igual" in str(exc_info.value)
+
+
+def test_init_qt_numbers_zero_exception():
+    with pytest.raises(ParameterSetException) as exc_info:
+        Loteria(qt_numbers=0)
+    assert "maior que 0" in str(exc_info.value)
+
 
 # --- Testes para set_min_value ---
 
-def test_set_min_value_success():
-    response = loteria.set_min_value(10)
-    assert loteria.MIN_VALUE == 10
+def test_set_min_value_success(jogo):
+    response = jogo.set_min_value(10)
+    assert jogo.min_value == 10
     assert response == "MIN_VALUE atualizado: 10"
 
-def test_set_min_value_negative_value_exception():
+
+def test_set_min_value_negative_value_exception(jogo):
     with pytest.raises(ParameterSetException) as exc_info:
-        loteria.set_min_value(-5)
+        jogo.set_min_value(-5)
     assert "Valores negativos não são suportados" in str(exc_info.value)
 
-def test_set_min_value_exceeds_max_value_exception():
+
+def test_set_min_value_exceeds_max_value_exception(jogo):
     with pytest.raises(ParameterSetException) as exc_info:
-        loteria.set_min_value(105)
+        jogo.set_min_value(105)
     assert "O valor minímo não deve exceder o valor máximo" in str(exc_info.value)
 
-def test_set_min_value_rollback_on_qt_numbers_mismatch():
+
+def test_set_min_value_rollback_on_qt_numbers_mismatch(jogo):
     # QT_NUMBERS=50 só cabe se o intervalo tiver pelo menos 50 números
-    loteria.qtd_numeros_sorteador(50)
+    jogo.qtd_numeros_sorteados(50)
 
     with pytest.raises(ParameterSetException) as exc_info:
-        loteria.set_min_value(60)  # intervalo [60,100] só tem 41 números
+        jogo.set_min_value(60)  # intervalo [60,100] só tem 41 números
 
     assert "QT_NUMBERS" in str(exc_info.value)
-    assert loteria.MIN_VALUE == 0  # precisa ter revertido, não pode ter ficado em 60
+    assert jogo.min_value == 0  # precisa ter revertido, não pode ter ficado em 60
+
 
 # --- Testes para set_max_value ---
 
-def test_set_max_value_success():
-    response = loteria.set_max_value(50)
-    assert loteria.MAX_VALUE == 50
+def test_set_max_value_success(jogo):
+    response = jogo.set_max_value(50)
+    assert jogo.max_value == 50
     assert response == "MAX_VALUE atualizado: 50"
 
-def test_set_max_value_equal_to_min_value_exception():
-    loteria.set_min_value(20)
+
+def test_set_max_value_equal_to_min_value_exception(jogo):
+    jogo.set_min_value(20)
     with pytest.raises(ParameterSetException) as exc_info:
-        loteria.set_max_value(20)
+        jogo.set_max_value(20)
     assert "igual ou menor que o minímo" in str(exc_info.value)
 
-def test_set_max_value_less_than_min_value_exception():
-    loteria.set_min_value(20)
+
+def test_set_max_value_less_than_min_value_exception(jogo):
+    jogo.set_min_value(20)
     with pytest.raises(ParameterSetException) as exc_info:
-        loteria.set_max_value(15)
+        jogo.set_max_value(15)
     assert "igual ou menor que o minímo" in str(exc_info.value)
 
-def test_set_max_value_rollback_on_qt_numbers_mismatch():
-    loteria.qtd_numeros_sorteador(50)
+
+def test_set_max_value_rollback_on_qt_numbers_mismatch(jogo):
+    jogo.qtd_numeros_sorteados(50)
 
     with pytest.raises(ParameterSetException) as exc_info:
-        loteria.set_max_value(30)  # intervalo [0,30] só tem 31 números
+        jogo.set_max_value(30)  # intervalo [0,30] só tem 31 números
 
     assert "QT_NUMBERS" in str(exc_info.value)
-    assert loteria.MAX_VALUE == 100  # precisa ter revertido, não pode ter ficado em 30
+    assert jogo.max_value == 100  # precisa ter revertido, não pode ter ficado em 30
 
-# --- Testes para qtd_numeros_sorteador ---
 
-def test_qtd_numeros_sorteador_success():
-    response = loteria.qtd_numeros_sorteador(10)
-    assert loteria.QT_NUMBERS == 10
+# --- Testes para qtd_numeros_sorteados ---
+
+def test_qtd_numeros_sorteados_success(jogo):
+    response = jogo.qtd_numeros_sorteados(10)
+    assert jogo.qt_numbers == 10
     assert response == "QT_NUMBERS atualizado: 10"
 
-def test_qtd_numeros_sorteador_greater_than_available_range_exception():
+
+def test_qtd_numeros_sorteados_greater_than_available_range_exception(jogo):
     with pytest.raises(ParameterSetException) as exc_info:
-        loteria.qtd_numeros_sorteador(150)
+        jogo.qtd_numeros_sorteados(150)
     assert "disponíveis para sorteio" in str(exc_info.value)
 
-def test_qtd_numeros_sorteador_zero_exception():
+
+def test_qtd_numeros_sorteados_zero_exception(jogo):
     with pytest.raises(ParameterSetException) as exc_info:
-        loteria.qtd_numeros_sorteador(0)
+        jogo.qtd_numeros_sorteados(0)
     assert "maior que 0" in str(exc_info.value)
 
-def test_qtd_numeros_sorteador_negative_exception():
+
+def test_qtd_numeros_sorteados_negative_exception(jogo):
     with pytest.raises(ParameterSetException) as exc_info:
-        loteria.qtd_numeros_sorteador(-3)
+        jogo.qtd_numeros_sorteados(-3)
     assert "maior que 0" in str(exc_info.value)
 
-def test_qtd_numeros_sorteador_rebuilds_winner_tickets():
-    # Teste de regressão: garante que WINNER_TICKETS global é
-    # realmente reconstruído (bug anterior: faltava "global WINNER_TICKETS")
-    loteria.qtd_numeros_sorteador(8)
-    assert len(loteria.WINNER_TICKETS) == 9  # índices 0..8
-    assert all(bucket == [] for bucket in loteria.WINNER_TICKETS)
+
+def test_qtd_numeros_sorteados_rebuilds_winner_tickets(jogo):
+    # Garante que winner_tickets da instância é reconstruído
+    jogo.qtd_numeros_sorteados(8)
+    assert len(jogo.winner_tickets) == 9  # índices 0..8
+    assert all(bucket == [] for bucket in jogo.winner_tickets)
+
 
 # --- Testes para add_ticket ---
 
-def test_add_ticket_success():
-    response = loteria.add_ticket("1 2 3 4 5")
+def test_add_ticket_success(jogo):
+    response = jogo.add_ticket("1 2 3 4 5")
     assert "foi adicionada com sucesso" in response
-    assert {1, 2, 3, 4, 5} in loteria.TICKETS
+    assert {1, 2, 3, 4, 5} in jogo.tickets
 
-def test_add_ticket_empty_string_exception():
+
+def test_add_ticket_empty_string_exception(jogo):
     with pytest.raises(AddTicketException) as exc_info:
-        loteria.add_ticket("   ")
+        jogo.add_ticket("   ")
     assert "A aposta não deve estar vazia" in str(exc_info.value)
 
-def test_add_ticket_non_numeric_values_exception():
+
+def test_add_ticket_non_numeric_values_exception(jogo):
     with pytest.raises(AddTicketException) as exc_info:
-        loteria.add_ticket("1 2 tres 4 5")
+        jogo.add_ticket("1 2 tres 4 5")
     assert "valores numéricos" in str(exc_info.value)
 
-def test_add_ticket_numbers_out_of_range_exception():
+
+def test_add_ticket_numbers_out_of_range_exception(jogo):
     with pytest.raises(AddTicketException) as exc_info:
-        loteria.add_ticket("0 50 101 2 3")
+        jogo.add_ticket("0 50 101 2 3")
     assert "intervalo de" in str(exc_info.value)
 
-def test_add_ticket_duplicate_numbers_exception():
+
+def test_add_ticket_duplicate_numbers_exception(jogo):
     with pytest.raises(AddTicketException) as exc_info:
-        loteria.add_ticket("5 5 10 10 20")
+        jogo.add_ticket("5 5 10 10 20")
     assert "números repetidos" in str(exc_info.value)
 
-def test_add_ticket_wrong_quantity_no_duplicates_exception():
-    # Sem duplicados, mas com menos números do que QT_NUMBERS exige
+
+def test_add_ticket_wrong_quantity_no_duplicates_exception(jogo):
     with pytest.raises(AddTicketException) as exc_info:
-        loteria.add_ticket("1 2 3")
-    assert f"deve conter {loteria.QT_NUMBERS} números" in str(exc_info.value)
+        jogo.add_ticket("1 2 3")
+    assert f"deve conter {jogo.qt_numbers} números" in str(exc_info.value)
+
 
 # --- Testes para reset_tickets ---
 
-def test_reset_tickets():
-    loteria.add_ticket("1 2 3 4 5")
-    assert len(loteria.TICKETS) == 1
+def test_reset_tickets(jogo):
+    jogo.add_ticket("1 2 3 4 5")
+    assert len(jogo.tickets) == 1
 
-    loteria.reset_tickets()
-    assert loteria.TICKETS == []
+    jogo.reset_tickets()
+    assert jogo.tickets == []
 
-# --- Testes para reset_all ---
-
-def test_reset_all_restores_defaults():
-    loteria.set_min_value(10)
-    loteria.set_max_value(200)
-    loteria.qtd_numeros_sorteador(8)
-    loteria.add_ticket("10 11 12 13 14 15 16 17")
-
-    loteria.reset_all()
-
-    assert loteria.MIN_VALUE == 0
-    assert loteria.MAX_VALUE == 100
-    assert loteria.QT_NUMBERS == 5
-    assert loteria.TICKETS == []
-    assert loteria.SORTED_NUMBERS == []
-    assert len(loteria.WINNER_TICKETS) == 6  # QT_NUMBERS(5) + índice 0
-    assert all(bucket == [] for bucket in loteria.WINNER_TICKETS)
 
 # --- Testes para fetch_tickets ---
 
-def test_fetch_tickets_success():
-    loteria.add_ticket("0 1 2 3 4")
-    tickets = loteria.fetch_tickets()
+def test_fetch_tickets_success(jogo):
+    jogo.add_ticket("0 1 2 3 4")
+    tickets = jogo.fetch_tickets()
     assert len(tickets) == 1
     assert tickets[0] == {0, 1, 2, 3, 4}
 
-def test_fetch_tickets_returns_copy():
-    loteria.add_ticket("0 1 2 3 4")
-    tickets = loteria.fetch_tickets()
+
+def test_fetch_tickets_returns_copy(jogo):
+    jogo.add_ticket("0 1 2 3 4")
+    tickets = jogo.fetch_tickets()
     tickets.clear()
-    assert len(loteria.TICKETS) == 1
+    assert len(jogo.tickets) == 1
 
-# --- Testes para temp_numbers_sort ---
 
-def test_temp_numbers_sort_with_matches(monkeypatch):
-    # Fixa o retorno do sorteio aleatório para garantir reprodutibilidade
-    monkeypatch.setattr(loteria.random, "sample", lambda range_val, k: [0, 1, 2, 3, 4])
+# --- Testes para realizar_sorteio ---
 
-    loteria.add_ticket("0 1 2 3 4")  # 5 acertos
-    loteria.add_ticket("0 1 2 8 9")  # 3 acertos
+def test_realizar_sorteio_with_matches(jogo, monkeypatch):
+    monkeypatch.setattr("random.sample", lambda range_val, k: [0, 1, 2, 3, 4])
 
-    loteria.temp_numbers_sort()
+    jogo.add_ticket("0 1 2 3 4")  # 5 acertos
+    jogo.add_ticket("0 1 2 8 9")  # 3 acertos
 
-    assert set(loteria.SORTED_NUMBERS) == {0, 1, 2, 3, 4}
-    assert {0, 1, 2, 3, 4} in loteria.WINNER_TICKETS[5]
-    assert {0, 1, 2, 8, 9} in loteria.WINNER_TICKETS[3]
+    sorteados, vencedores = jogo.realizar_sorteio()
 
-def test_temp_numbers_sort_no_matches(monkeypatch):
-    monkeypatch.setattr(loteria.random, "sample", lambda range_val, k: [0, 1, 2, 3, 4])
+    assert set(sorteados) == {0, 1, 2, 3, 4}
+    assert set(jogo.sorted_numbers) == {0, 1, 2, 3, 4}
+    assert {0, 1, 2, 3, 4} in vencedores[5]
+    assert {0, 1, 2, 8, 9} in vencedores[3]
 
-    loteria.add_ticket("50 51 52 53 54")  # Nenhum acerto
 
-    loteria.temp_numbers_sort()
+def test_realizar_sorteio_no_matches(jogo, monkeypatch):
+    monkeypatch.setattr("random.sample", lambda range_val, k: [0, 1, 2, 3, 4])
 
-    for qt_acertos in range(1, loteria.QT_NUMBERS + 1):
-        assert loteria.WINNER_TICKETS[qt_acertos] == []
+    jogo.add_ticket("50 51 52 53 54")  # Nenhum acerto
 
-def test_temp_numbers_sort_returns_winner_tickets(monkeypatch):
-    # Teste de regressão: garante que a função retorna WINNER_TICKETS
-    # (bug anterior: faltava o "return" no final de temp_numbers_sort)
-    monkeypatch.setattr(loteria.random, "sample", lambda range_val, k: [0, 1, 2, 3, 4])
+    sorteados, vencedores = jogo.realizar_sorteio()
 
-    loteria.add_ticket("0 1 2 3 4")
-    result = loteria.temp_numbers_sort()
+    for qt_acertos in range(1, jogo.qt_numbers + 1):
+        assert vencedores[qt_acertos] == []
 
-    assert result is loteria.WINNER_TICKETS
 
-def test_temp_numbers_sort_does_not_clear_tickets(monkeypatch):
-    # Decisão de design: quem decide quando zerar as apostas é o servidor,
-    # não o sorteio em si.
-    monkeypatch.setattr(loteria.random, "sample", lambda range_val, k: [0, 1, 2, 3, 4])
+def test_realizar_sorteio_sem_apostas(jogo, monkeypatch):
+    monkeypatch.setattr("random.sample", lambda range_val, k: [0, 1, 2, 3, 4])
 
-    loteria.add_ticket("0 1 2 3 4")
-    loteria.temp_numbers_sort()
+    sorteados, vencedores = jogo.realizar_sorteio()
+    assert set(sorteados) == {0, 1, 2, 3, 4}
+    assert all(bucket == [] for bucket in vencedores)
 
-    assert len(loteria.TICKETS) == 1
+
+def test_realizar_sorteio_returns_references(jogo, monkeypatch):
+    monkeypatch.setattr("random.sample", lambda range_val, k: [0, 1, 2, 3, 4])
+
+    jogo.add_ticket("0 1 2 3 4")
+    sorteados, vencedores = jogo.realizar_sorteio()
+
+    assert sorteados is jogo.sorted_numbers
+    assert vencedores is jogo.winner_tickets
+
+
+def test_realizar_sorteio_does_not_clear_tickets(jogo, monkeypatch):
+    monkeypatch.setattr("random.sample", lambda range_val, k: [0, 1, 2, 3, 4])
+
+    jogo.add_ticket("0 1 2 3 4")
+    jogo.realizar_sorteio()
+
+    assert len(jogo.tickets) == 1
+
+
+# --- Teste de Isolamento entre Instâncias ---
+
+def test_instancias_independentes():
+    jogo1 = Loteria()
+    jogo2 = Loteria()
+
+    jogo1.set_min_value(10)
+    jogo1.qtd_numeros_sorteados(6)
+    jogo1.add_ticket("10 11 12 13 14 15")
+
+    assert jogo2.min_value == 0
+    assert jogo2.max_value == 100
+    assert jogo2.qt_numbers == 5
+    assert len(jogo2.tickets) == 0
