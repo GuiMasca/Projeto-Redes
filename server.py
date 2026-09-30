@@ -9,7 +9,6 @@ from loteria import AddTicketException, LoteriaException
 lock = threading.Lock()
 quantidade_clientes = 0
 clientes_ativos = []  # Sessões e referências das threads, inclusive durante a admissão.
-jogo = loteria.Loteria()  # Configuração e sorteio comuns a todos os clientes.
 INTERVALO_SORTEIO = 60
 
 
@@ -22,34 +21,24 @@ def interromper_cliente(cliente):
 
 
 def ciclo_sorteio(encerrar):
-    # Um único relógio: todos participam da mesma rodada.
+    # O relógio é comum, mas cada sessão tem configuração, apostas e sorteio próprios.
     while not encerrar.wait(INTERVALO_SORTEIO):
         with lock:
             participantes = [c for c in clientes_ativos if c['pronto'] and not c['encerrar'].is_set()]
-            if not participantes:
-                continue
-            try:
-                sorteados, vencedores = jogo.realizar_sorteio()
-            except LoteriaException as e:
-                # A loteria atual recusa sorteios sem apostas; mantém o ciclo vivo.
-                mensagem = f'ERRO: {e}\n'
-                print(f'Sorteio não realizado: {e}')
-                envios = [(c, mensagem) for c in participantes]
-            else:
-                mensagem = montar_mensagem_resultado(sorteados, vencedores)
-                print(f'Sorteio realizado:\n{mensagem}', end='')
-                envios = []
-                for cliente in participantes:
-                    # Identidade distingue apostas iguais feitas por clientes diferentes.
-                    apostas_cliente = {id(aposta) for aposta in cliente['apostas']}
-                    vencedores_cliente = [
-                        [aposta for aposta in grupo if id(aposta) in apostas_cliente]
-                        for grupo in vencedores
-                    ]
-                    envios.append((cliente, montar_mensagem_resultado(sorteados, vencedores_cliente)))
-                    cliente['apostas'].clear()
-                jogo.reset_tickets()
-                jogo.winner_tickets = [[] for _ in range(jogo.qt_numbers + 1)]
+            envios = []
+            for cliente in participantes:
+                jogo = cliente['jogo']
+                try:
+                    sorteados, vencedores = jogo.realizar_sorteio()
+                except LoteriaException as e:
+                    mensagem = f'ERRO: {e}\n'
+                    print(f"Sorteio não realizado para {cliente['addr']}: {e}")
+                else:
+                    mensagem = montar_mensagem_resultado(sorteados, vencedores)
+                    print(f"Sorteio realizado para {cliente['addr']}:\n{mensagem}", end='')
+                    jogo.reset_tickets()
+                    jogo.winner_tickets = [[] for _ in range(jogo.qt_numbers + 1)]
+                envios.append((cliente, mensagem))
 
         for cliente, mensagem in envios:
             with cliente['lock_envio']:
@@ -81,6 +70,7 @@ def montar_mensagem_resultado(sorteados, vencedores):
 
 def atender_cliente(cliente, limite_clientes):
     conn, addr = cliente['conn'], cliente['addr']
+    jogo = cliente['jogo']
     global quantidade_clientes
     horario = datetime.now().strftime("%d/%m/%Y %H:%M:%S")      #define o texto do horario: dia, mes, ano, hora, minuto, segundo
 
@@ -147,7 +137,6 @@ def atender_cliente(cliente, limite_clientes):
 
                             try:
                                 resposta = jogo.add_ticket(linha_limpa) + '\n'
-                                cliente['apostas'].append(jogo.tickets[-1])
                             except AddTicketException as e:
                                 resposta = f'ERRO:{e}\n'
 
@@ -167,10 +156,6 @@ def atender_cliente(cliente, limite_clientes):
         with lock:
             if cliente['admitido']:
                 quantidade_clientes -= 1
-            # Remove somente os bilhetes desta conexão, preservando os demais.
-            apostas_cliente = {id(aposta) for aposta in cliente['apostas']}
-            jogo.tickets[:] = [a for a in jogo.tickets if id(a) not in apostas_cliente]
-            cliente['apostas'].clear()
             clientes_ativos.remove(cliente)
         horario_fim = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         print('Conexão encerrada por', addr, 'às', horario_fim)
@@ -188,7 +173,8 @@ def executar_servidor(limite_clientes):
             while True:
                 conn, addr = s.accept()
                 cliente = {
-                    'conn': conn, 'addr': addr, 'apostas': [], 'admitido': False, 'pronto': False,
+                    'conn': conn, 'addr': addr, 'jogo': loteria.Loteria(),
+                    'admitido': False, 'pronto': False,
                     'encerrar': threading.Event(), 'lock_envio': threading.Lock(),
                 }
                 t1 = threading.Thread(target=atender_cliente, args=(cliente, limite_clientes))
