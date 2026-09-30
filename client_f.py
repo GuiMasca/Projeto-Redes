@@ -117,8 +117,13 @@ def main():
         print("\nCOMO JOGAR")
         print("- Faça sua aposta digitando 5 números separados por espaços.")
         print("  Exemplo: 1 2 3 4 5")
-        print("- Após a confirmação da aposta, aguarde o resultado do sorteio.\n")
-        print("- Digite :sair a qualquer momento para desconectar.\n")
+        print("- Após a confirmação da aposta, aguarde o resultado do sorteio.")
+        print("- Digite :sair a qualquer momento para desconectar.")
+        print("\nCOMANDOS")
+        print("  :inicio <valor>  - define o menor número do sorteio")
+        print("  :fim <valor>     - define o maior número do sorteio")
+        print("  :qtd <valor>     - define quantos números são sorteados/apostados")
+        print("  :sair            - desconecta do servidor\n")
         show_bet_prompt()
 
         receive_thread = threading.Thread(

@@ -12,139 +12,133 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'loteria'))
 from loteria_exceptions import LoteriaException, ParameterSetException, AddTicketException
 
-# funções auxiliares
-def _build_empty_winner_tickets() :
-    return [[] for _ in range(QT_NUMBERS + 1)]
+class Loteria:
+	#construtor
+	def __init__(self, min_value=0, max_value=100, qt_numbers=5):
+		if (min_value < 0) :
+			raise ParameterSetException("Valores negativos não são suportados para min_value")
 
-def _range_of_available_numbers() :
-    return MAX_VALUE - MIN_VALUE + 1
+		if (max_value <= min_value) :
+			raise ParameterSetException("O valor mínimo não deve exceder ou ser igual ao valor máximo")
 
-def _check_qt_numbers_fits_range() :
-    if QT_NUMBERS > _range_of_available_numbers() :
-        raise ParameterSetException(f"QT_NUMBERS | {QT_NUMBERS} deve ser menor que a quantidade de números disponíveis no intervalo entre {MIN_VALUE} ~ {MAX_VALUE}")
+		if (qt_numbers < 1) :
+			raise ParameterSetException("A quantidade de números a serem sorteados deve ser maior que 0")
 
-# parâmetros globais
-MIN_VALUE = 0
-MAX_VALUE = 100
-QT_NUMBERS = 5
-TICKETS = []
-SORTED_NUMBERS = []
-WINNER_TICKETS = _build_empty_winner_tickets()
+		#atributos da classe
+		self.min_value = min_value
+		self.max_value = max_value
+		self.qt_numbers = qt_numbers
 
-# funções para setar parâmetros
-def set_min_value (new_value) :
-	global MIN_VALUE
+		self.tickets = []
+		self.sorted_numbers = []
+		self.winner_tickets = self._build_empty_winner_tickets()
 
-	if (new_value < 0) :
-		raise ParameterSetException("Valores negativos não são suportados")
+	# funções auxiliares
+	def _build_empty_winner_tickets(self) :
+		return [[] for _ in range(self.qt_numbers + 1)]
+
+	def _range_of_available_numbers(self) :
+		return self.max_value - self.min_value + 1
+
+	def _check_qt_numbers_fits_range(self) :
+		if self.qt_numbers > self._range_of_available_numbers() :
+			raise ParameterSetException(f"QT_NUMBERS | {self.qt_numbers} deve ser menor que a quantidade de números disponíveis no intervalo entre {self.min_value} ~ {self.max_value}")
+
+	# funções para setar parâmetros da instância
+	def set_min_value (self, new_value) :
+		if (new_value < 0) :
+			raise ParameterSetException("Valores negativos não são suportados")
+		
+		if (new_value >= self.max_value) :
+			raise ParameterSetException("O valor minímo não deve exceder o valor máximo")
+
+		old_value = self.min_value
+		self.min_value = new_value
 	
-	if (new_value >= MAX_VALUE) :
-		raise ParameterSetException("O valor minímo não deve exceder o valor máximo")
+		try:
+			self._check_qt_numbers_fits_range()
+		except ParameterSetException :
+			self.min_value = old_value
+			raise
 
-	old_value = MIN_VALUE
-	MIN_VALUE = new_value
- 
-	try:
-		_check_qt_numbers_fits_range()
-	except ParameterSetException :
-		MIN_VALUE = old_value
-		raise
+		return f"MIN_VALUE atualizado: {self.min_value}"
 
-	return f"MIN_VALUE atualizado: {MIN_VALUE}"
+	def set_max_value(self, new_value) :
+		if(new_value <= self.min_value) :
+			raise ParameterSetException("O valor máximo não pode ser igual ou menor que o minímo")
 
-def set_max_value (new_value) :
-	global MAX_VALUE
+		old_value = self.max_value
+		self.max_value = new_value
 
-	if (new_value <= MIN_VALUE) :
-		raise ParameterSetException("O valor máximo não pode ser igual ou menor que o minímo")
+		try :
+			self._check_qt_numbers_fits_range()
+		except ParameterSetException:
+			self.max_value = old_value
+			raise
 
-	old_value = MAX_VALUE
-	MAX_VALUE = new_value
+		return f"MAX_VALUE atualizado: {self.max_value}"
 
-	try :
-		_check_qt_numbers_fits_range()
-	except ParameterSetException :
-		MAX_VALUE = old_value
-		raise
+	def qtd_numeros_sorteados(self, qtd):
+		if (qtd < 1) :
+			raise ParameterSetException("A quantidade de números a serem sorteados deve ser maior que 0")
 
-	return f"MAX_VALUE atualizado: {MAX_VALUE}"
+		if (qtd > self._range_of_available_numbers()) :
+			raise ParameterSetException("A quantidade de números a serem sorteados deve ser menor que a quantidade de números disponíveis para sorteio")
 
+		self.qt_numbers = qtd
+		self.winner_tickets = self._build_empty_winner_tickets()
 
-def qtd_numeros_sorteador (qtd) :
-	global QT_NUMBERS, WINNER_TICKETS
+		return f"QT_NUMBERS atualizado: {self.qt_numbers}"
 
-	if (qtd < 1) :
-		raise ParameterSetException("A quantidade de números a serem sorteados deve ser maior que 0")
+	# funções para realizar o sorteio
+	def add_ticket(self, numbers_input) :
+		if (not numbers_input or not str(numbers_input).strip()) :
+			raise AddTicketException("A aposta não deve estar vazia")
 
-	if (qtd > _range_of_available_numbers()) :
-		raise ParameterSetException("A quantidade de números a serem sorteados deve ser menor que a quantidade de números disponíveis para sorteio")
+		# dou parse na string pra separar os números em elementos de um array
+		try :
+			parsed_numbers = [int(n) for n in numbers_input.split()]
+		except ValueError :
+			raise AddTicketException("A aposta deve conter somente valores numéricos")
 
-	QT_NUMBERS = qtd
-	WINNER_TICKETS = _build_empty_winner_tickets()
+		# removo números repetidos do array dos números da aposta
+		qt_nums_informados = len(parsed_numbers)
+		parsed_numbers = set(parsed_numbers)
 
-	return f"QT_NUMBERS atualizado: {QT_NUMBERS}"
+		# verifico se houve uma mudança na quantidade de elementos (se teve, quer dizer que tinham valores repetidos)
+		if (qt_nums_informados != len(parsed_numbers)) :
+			raise AddTicketException(f"A aposta contém números repetidos (a aposta deve conter {self.qt_numbers} números únicos)")
 
-# sorteio
-def add_ticket(numbers_input) :
-	global TICKETS
+		# se não tinha repetidos, vejo se tem a quantidade de números préviamente (ou não) configuradas
+		if (qt_nums_informados != self.qt_numbers) :
+			raise AddTicketException(f"A aposta deve conter {self.qt_numbers} números")
 
-	if (not numbers_input or not str(numbers_input).strip()) :
-		raise AddTicketException("A aposta não deve estar vazia")
+		# crio um conjunto dos números que podem ser atribuídos à uma aposta
+		availabe_numbers_set = set(range(self.min_value, self.max_value + 1))
 
-	try :
-		parsed_numbers = [int(n) for n in numbers_input.split()]
-	except ValueError :
-		raise AddTicketException("A aposta deve conter somente valores numéricos")
+		# e vejo se os números inseridos pertencem ao conjunto (de modo que o conjuntos dos valores apostados deve ser um subconjunto dos números válidos)
+		if (not parsed_numbers.issubset(availabe_numbers_set)) :
+			raise AddTicketException(f"A aposta deve conter somente valores no intervalo de {self.min_value} a {self.max_value}")
 
-	qt_informados = len(parsed_numbers)
-	parsed_numbers = set(parsed_numbers)
+		self.tickets.append(parsed_numbers)
 
-	if (qt_informados != len(parsed_numbers)) :
-		raise AddTicketException(f"A aposta contém números repetidos (a aposta deve conter {QT_NUMBERS} números únicos)")
+		return f"A aposta {parsed_numbers} foi adicionada com sucesso"
 
-	if (len(parsed_numbers) != QT_NUMBERS) :
-		raise AddTicketException(f"A aposta deve conter {QT_NUMBERS} números")
+	def reset_tickets(self) :
+		self.tickets.clear()
 
-	available_numbers_set = set(range(MIN_VALUE, MAX_VALUE + 1))
+	def fetch_tickets(self) :
+		return self.tickets.copy()
 
-	if (not parsed_numbers.issubset(available_numbers_set)) :
-		raise AddTicketException(f"A aposta deve conter somente valores no intervalo de {MIN_VALUE} a {MAX_VALUE}")
+	def realizar_sorteio(self) :
+		self.winner_tickets = self._build_empty_winner_tickets()
+		self.sorted_numbers = random.sample(range(self.min_value, self.max_value + 1), self.qt_numbers)
+		sorted_set = set(self.sorted_numbers)
 
-	TICKETS.append(parsed_numbers)
+		for ticket in self.tickets :
+			qt_matches = len(sorted_set & ticket)
 
-	return f"A aposta {parsed_numbers} foi adicionada com sucesso"
+			if (qt_matches != 0) :
+				self.winner_tickets[qt_matches].append(ticket)
 
-def reset_tickets() :
-	TICKETS.clear()
-
-def reset_all() :
-	"""Restaura todos os parâmetros globais para os valores padrão."""
-	global MIN_VALUE, MAX_VALUE, QT_NUMBERS, WINNER_TICKETS
-
-	MIN_VALUE = 0
-	MAX_VALUE = 100
-	QT_NUMBERS = 5
-	TICKETS.clear()
-	SORTED_NUMBERS.clear()
-	WINNER_TICKETS = _build_empty_winner_tickets()
-
-def fetch_tickets() :
-	return TICKETS.copy()
-
-# funções temporárias
-
-def temp_numbers_sort() :
-	global SORTED_NUMBERS, WINNER_TICKETS
-
-	WINNER_TICKETS = _build_empty_winner_tickets()
-	SORTED_NUMBERS = random.sample(range(MIN_VALUE, MAX_VALUE + 1), QT_NUMBERS)
-
-	sorted_numbers_set = set(SORTED_NUMBERS)
-
-	for ticket in TICKETS :
-		qt_matches = len(sorted_numbers_set & ticket)
-
-		if (qt_matches != 0) :
-			WINNER_TICKETS[qt_matches].append(ticket)
-
-	return WINNER_TICKETS
+		return self.sorted_numbers, self.winner_tickets
