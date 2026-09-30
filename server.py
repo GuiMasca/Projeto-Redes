@@ -4,8 +4,7 @@ import threading
 import time
 from datetime import datetime
 
-import loteria
-from loteria import AddTicketException, LoteriaException
+from loteria import Loteria, AddTicketException, LoteriaException
 
 import server_exception
 from server_exception import ServerException, ClientLimitReachedException
@@ -33,9 +32,8 @@ def ciclo_sorteio(conn, encerrar):
             time.sleep(1)   #sono de 1 segundo
 
         with lock:
-            vencedores = loteria.temp_numbers_sort()    #sorteia e calcula
-            sorteados = loteria.SORTED_NUMBERS  #guarda cópia dos sorteados
-            loteria.TICKETS.clear() #zera as apostas para o proximo ciclo
+            vencedores, sorteados = sessao.realizar_sorteio()
+            sessao.reset_tickets() #zera as apostas para o proximo ciclo
         mensagem = montar_mensagem_resultado(sorteados, vencedores)
         print(f'Sorteio realizado:\n{mensagem}', end='')   #registro completo no servidor: numeros sorteados e ganhadores
 
@@ -100,11 +98,11 @@ def atender_cliente(conn, addr, encerrar):
                                 valor = int(partes[1])  #'10' texto -> 10 numero
 
                                 if comando == ':inicio':
-                                    resposta = loteria.set_min_value(valor) + '\n'
+                                    resposta = sessao.set_min_value(valor) + '\n'
                                 elif comando == ':fim':
-                                    resposta = loteria.set_max_value(valor) + '\n'
+                                    resposta = sessao.set_max_value(valor) + '\n'
                                 elif comando == ':qtd':
-                                    resposta = loteria.qtd_numeros_sorteador(valor) + '\n'
+                                    resposta = sessao.qtd_numeros_sorteador(valor) + '\n'
                                 else:
                                     resposta = 'ERRO: comando desconhecido\n'   #":" chegou, mas comando não existe
 
@@ -118,7 +116,7 @@ def atender_cliente(conn, addr, encerrar):
                                 continue
 
                             try:
-                                resposta = loteria.add_ticket(linha_limpa) + '\n'
+                                resposta = sessao.add_ticket(linha_limpa) + '\n'
                             except AddTicketException as e:
                                 resposta = f'ERRO:{e}\n'
 
@@ -128,7 +126,7 @@ def atender_cliente(conn, addr, encerrar):
                     if not conectado:
                         break
                     
-                    print(f'recebido: {linha} | Apostas: {loteria.fetch_tickets()}')    #olha e printa loteria.TICKETS
+                    print(f'recebido: {linha} | Apostas: {sessao.fetch_tickets()}')    #olha e printa loteria.TICKETS
 
     finally:
         with lock:
@@ -161,9 +159,12 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             # with lock:
             #   loteria.reset_all()
 
+            sessao = Loteria()
             encerrar = threading.Event()
-            t1 = threading.Thread(target=atender_cliente, args=(conn, addr, encerrar), daemon=True)  #cria uma thread ("funcionario") para cada cliente que se conecta; daemon=True: encerra junto com o servidor
-            t2 = threading.Thread(target=ciclo_sorteio, args=(conn, encerrar), daemon=True)  #cria a thread do relojoeiro; daemon idem
+
+            t1 = threading.Thread(target=atender_cliente, args=(conn, addr, encerrar, sessao), daemon=True)  #cria uma thread ("funcionario") para cada cliente que se conecta; daemon=True: encerra junto com o servidor
+            t2 = threading.Thread(target=ciclo_sorteio, args=(conn, encerrar, sessao), daemon=True)  #cria a thread do relojoeiro; daemon idem
+
             t1.start() #coloca as threads ("funcionarios") para trabalhar
             t2.start()
 
