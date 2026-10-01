@@ -5,6 +5,7 @@ from datetime import datetime
 
 import loteria
 from loteria import AddTicketException, LoteriaException
+from servidor.server_exception import ServerException, ClientLimitReachedException
 
 lock = threading.Lock()
 quantidade_clientes = 0
@@ -77,11 +78,14 @@ def atender_cliente(cliente, limite_clientes):
     try:
         with conn:
             # A própria working thread reserva a vaga de forma atômica.
-            with lock:
-                if quantidade_clientes < limite_clientes:
+            try :
+                with lock:
+                    if (quantidade_clientes >= limite_clientes) :
+                        raise ClientLimitReachedException("Limite de clientes execedido")
+
                     quantidade_clientes += 1
                     cliente['admitido'] = True
-            if not cliente['admitido']:
+            except ClientLimitReachedException :
                 conn.sendall('Limite de clientes excedido. A conexão será encerrada\n'.encode())
                 return
 
