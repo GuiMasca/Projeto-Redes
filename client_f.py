@@ -1,4 +1,5 @@
 import socket
+import sys
 import threading
 
 
@@ -26,7 +27,9 @@ def receive_messages(sock, stop_event, bet_allowed):
             elif 'Limite' in message:
                 break
             elif 'foi adicionada com sucesso' in message:
-                print('Aposta confirmada! Aguarde os resultados do sorteio.')
+                print('Aposta confirmada! Você pode fazer outra aposta ou aguardar os resultados do sorteio.')
+                bet_allowed.set()
+                show_bet_prompt()
             elif 'Números sorteados:' in message:
                 print('Rodada encerrada. Uma nova aposta pode ser feita.')
                 bet_allowed.set()
@@ -44,6 +47,10 @@ def receive_messages(sock, stop_event, bet_allowed):
             break
 
     stop_event.set()
+    try:
+        sock.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
 
 
 def send_messages(sock, stop_event, bet_allowed):
@@ -85,10 +92,6 @@ def send_messages(sock, stop_event, bet_allowed):
             break
 
     stop_event.set()
-    try:
-        sock.shutdown(socket.SHUT_RDWR)
-    except OSError:
-        pass
 
 
 def main():
@@ -96,9 +99,23 @@ def main():
     bet_allowed = threading.Event()
     bet_allowed.set()
 
+    host, port = 'localhost', 50007
+    if len(sys.argv) > 3:
+        sys.exit(f'Uso: python3 {sys.argv[0]} [IP] [PORTA]')
+    if len(sys.argv) >= 2:
+        host = sys.argv[1]
+    if len(sys.argv) == 3:
+        try:
+            port = int(sys.argv[2])
+            if not 1 <= port <= 65535:
+                raise ValueError
+        except ValueError:
+            sys.exit(f'Uso: python3 {sys.argv[0]} [IP] [PORTA] (porta 1-65535)')
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         try:
-            sock.connect(('localhost', 50007))
+            print(f'Conectando a {host} {port} ...')
+            sock.connect((host, port))
         except OSError as e:
             print('Não foi possível conectar ao servidor:', e)
             return
