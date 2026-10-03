@@ -26,10 +26,11 @@ def receive_messages(sock, stop_event, bet_allowed):
             elif 'Limite' in message:
                 break
             elif 'foi adicionada com sucesso' in message:
-                print('Aposta confirmada! Aguarde os resultados do sorteio.')
+                print('Aposta confirmada! Uma nova aposta pode ser feita.')
+                bet_allowed.set()
+                show_bet_prompt()
             elif 'Números sorteados:' in message:
                 print('Rodada encerrada. Uma nova aposta pode ser feita.')
-                bet_allowed.set()
                 show_bet_prompt()
             elif 'ERRO:' in message:
                 bet_allowed.set()
@@ -44,7 +45,6 @@ def receive_messages(sock, stop_event, bet_allowed):
             break
 
     stop_event.set()
-
 
 def send_messages(sock, stop_event, bet_allowed):
     while not stop_event.is_set():
@@ -152,7 +152,6 @@ def main():
         receive_thread.join()
 
         stop_event.set()
-
 
 if __name__ == "__main__":
     main()
